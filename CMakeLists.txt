@@ -34,5 +34,11 @@ add_executable(anomaly
 )
 target_link_libraries(anomaly PRIVATE glad glfw glm::glm)
 
+# No MinGW, embute as bibliotecas de C++ no executável para não depender
+# de DLLs (libstdc++, libgcc) de outra versão que estejam no PATH
+if(MINGW)
+    target_link_options(anomaly PRIVATE -static)
+endif()
+
 # Os shaders são lidos direto da pasta do projeto, então podem ser editados sem recompilar
 target_compile_definitions(anomaly PRIVATE SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders/")

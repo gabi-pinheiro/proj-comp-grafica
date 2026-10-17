@@ -16,7 +16,7 @@ float hash2(vec2 p)
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-float noise2(vec2 p)
+float valueNoise(vec2 p)
 {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -34,7 +34,7 @@ void main()
 
     vec3 albedo = uBaseColor;
     if (uIsGround == 1) {
-        float detail = 0.6 * noise2(vWorldPos.xz * 0.7) + 0.4 * noise2(vWorldPos.xz * 3.1);
+        float detail = 0.6 * valueNoise(vWorldPos.xz * 0.7) + 0.4 * valueNoise(vWorldPos.xz * 3.1);
         albedo *= 0.7 + 0.6 * detail;
     }
 
