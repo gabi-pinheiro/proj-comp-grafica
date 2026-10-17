@@ -51,7 +51,8 @@ vec3 applyFog(vec3 color, float dist, vec3 rayDir)
     return mix(color, skyColor(rayDir), fog);
 }
 
-// Tone mapping ACES (aproximação de Narkowicz) seguido de correção gama
+// Tone mapping ACES (aproximação de Narkowicz) seguido de correção gama.
+// Usado só no passe final, depois que bloom e god rays foram somados à cena HDR.
 vec3 toneMap(vec3 c)
 {
     c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);

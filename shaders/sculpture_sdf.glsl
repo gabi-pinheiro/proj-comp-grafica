@@ -137,3 +137,25 @@ float sculptureShadow(vec3 ro, vec3 rd)
     }
     return clamp(shadow, 0.0, 1.0);
 }
+
+// Visibilidade da luz do núcleo: marcha do ponto em direção ao centro do artefato e para
+// antes de entrar no núcleo. Assim a casca, os anéis e o espinho bloqueiam a luz e ela só
+// escapa pelos furos e pela faixa aberta da casca.
+float coreVisibility(vec3 p)
+{
+    vec3 toCore = artifactCenter() - p;
+    float dist = length(toCore);
+    vec3 rd = toCore / dist;
+    float tEnd = dist - 0.7;
+
+    float visibility = 1.0;
+    float t = max(dist - BOUND_RADIUS, 0.02);
+    for (int i = 0; i < 40 && t < tEnd; i++) {
+        float d = sculptureMap(p + rd * t).x;
+        visibility = min(visibility, 10.0 * d / t);
+        if (visibility < 0.002)
+            return 0.0;
+        t += clamp(d, 0.02, 0.2);
+    }
+    return clamp(visibility, 0.0, 1.0);
+}

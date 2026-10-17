@@ -117,13 +117,13 @@ void main()
         if (t > tClosest)
             color += glowColor * 0.6;
         color = applyFog(color, t, rd);
-        fragColor = vec4(toneMap(color), 1.0);
+        fragColor = vec4(color, 1.0);
         gl_FragDepth = depthFromPoint(p);
     } else {
         if (glow < 0.003)
             discard;
         // Alfa zero com blending pré-multiplicado: o halo é somado ao que já está na tela
-        fragColor = vec4(toneMap(glowColor), 0.0);
+        fragColor = vec4(glowColor, 0.0);
         gl_FragDepth = depthFromPoint(ro + rd * tClosest);
     }
 }

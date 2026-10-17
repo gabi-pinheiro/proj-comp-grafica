@@ -31,6 +31,7 @@ add_executable(anomaly
     src/main.cpp
     src/shader.cpp
     src/geometry.cpp
+    src/framebuffer.cpp
 )
 target_link_libraries(anomaly PRIVATE glad glfw glm::glm)
 

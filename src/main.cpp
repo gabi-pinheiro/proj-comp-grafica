@@ -10,6 +10,7 @@
 #include <random>
 #include <vector>
 
+#include "framebuffer.h"
 #include "geometry.h"
 #include "shader.h"
 
@@ -37,7 +38,26 @@ struct Programs {
     GLuint sky = 0;
     GLuint scene = 0;
     GLuint sculpture = 0;
+    GLuint particles = 0;
+    GLuint shadow = 0;
+    GLuint bright = 0;
+    GLuint blur = 0;
+    GLuint godRays = 0;
+    GLuint composite = 0;
 };
+
+// Alvos do pós-processamento: a cena em HDR na resolução da janela e os demais em 1/4
+struct PostTargets {
+    RenderTarget scene;
+    RenderTarget bright;
+    RenderTarget blurA;
+    RenderTarget blurB;
+    RenderTarget rays;
+};
+
+const int SHADOW_MAP_SIZE = 2048;
+const int PARTICLE_COUNT = 800;
+const int BLUR_ITERATIONS = 3;
 
 static OrbitCamera camera;
 static bool isDragging = false;
@@ -45,6 +65,8 @@ static double lastMouseX = 0.0, lastMouseY = 0.0;
 static bool animationPaused = false;
 static bool autoOrbit = false;
 static bool reloadRequested = false;
+static bool bloomEnabled = true;
+static bool godRaysEnabled = true;
 
 static void keyCallback(GLFWwindow* window, int key, int, int action, int)
 {
@@ -57,6 +79,8 @@ static void keyCallback(GLFWwindow* window, int key, int, int action, int)
     case GLFW_KEY_A: autoOrbit = !autoOrbit; break;
     case GLFW_KEY_R: camera = OrbitCamera(); break;
     case GLFW_KEY_F5: reloadRequested = true; break;
+    case GLFW_KEY_B: bloomEnabled = !bloomEnabled; break;
+    case GLFW_KEY_G: godRaysEnabled = !godRaysEnabled; break;
     }
 }
 
@@ -85,25 +109,81 @@ static void scrollCallback(GLFWwindow*, double, double offsetY)
     camera.distance = glm::clamp(camera.distance - (float)offsetY * 0.5f, 4.0f, 25.0f);
 }
 
+static void deletePrograms(Programs& programs)
+{
+    for (GLuint program : { programs.sky, programs.scene, programs.sculpture, programs.particles, programs.shadow,
+                            programs.bright, programs.blur, programs.godRays, programs.composite })
+        glDeleteProgram(program);
+    programs = Programs();
+}
+
 static bool loadPrograms(Programs& programs)
 {
     Programs loaded;
     loaded.sky = createShaderProgram("fullscreen.vert", "sky.frag");
     loaded.scene = createShaderProgram("scene.vert", "scene.frag");
     loaded.sculpture = createShaderProgram("fullscreen.vert", "sculpture.frag");
+    loaded.particles = createShaderProgram("particles.vert", "particles.frag");
+    loaded.shadow = createShaderProgram("shadow.vert", "shadow.frag");
+    loaded.bright = createShaderProgram("fullscreen.vert", "bright.frag");
+    loaded.blur = createShaderProgram("fullscreen.vert", "blur.frag");
+    loaded.godRays = createShaderProgram("fullscreen.vert", "godrays.frag");
+    loaded.composite = createShaderProgram("fullscreen.vert", "composite.frag");
 
-    if (!loaded.sky || !loaded.scene || !loaded.sculpture) {
-        glDeleteProgram(loaded.sky);
-        glDeleteProgram(loaded.scene);
-        glDeleteProgram(loaded.sculpture);
+    if (!loaded.sky || !loaded.scene || !loaded.sculpture || !loaded.particles || !loaded.shadow ||
+        !loaded.bright || !loaded.blur || !loaded.godRays || !loaded.composite) {
+        deletePrograms(loaded);
         return false;
     }
 
-    glDeleteProgram(programs.sky);
-    glDeleteProgram(programs.scene);
-    glDeleteProgram(programs.sculpture);
+    deletePrograms(programs);
     programs = loaded;
     return true;
+}
+
+static PostTargets createPostTargets(int width, int height)
+{
+    int smallWidth = std::max(width / 4, 1);
+    int smallHeight = std::max(height / 4, 1);
+
+    PostTargets targets;
+    targets.scene = createColorTarget(width, height, true);
+    targets.bright = createColorTarget(smallWidth, smallHeight, false);
+    targets.blurA = createColorTarget(smallWidth, smallHeight, false);
+    targets.blurB = createColorTarget(smallWidth, smallHeight, false);
+    targets.rays = createColorTarget(smallWidth, smallHeight, false);
+    return targets;
+}
+
+static void deletePostTargets(PostTargets& targets)
+{
+    deleteRenderTarget(targets.scene);
+    deleteRenderTarget(targets.bright);
+    deleteRenderTarget(targets.blurA);
+    deleteRenderTarget(targets.blurB);
+    deleteRenderTarget(targets.rays);
+}
+
+static void bindTarget(const RenderTarget& target)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
+    glViewport(0, 0, target.width, target.height);
+}
+
+static void bindTexture(int unit, GLuint texture)
+{
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, texture);
+}
+
+// Posição de um ponto na tela (0 a 1). visible fica 0 se o ponto estiver atrás da câmera.
+static glm::vec2 toScreen(const glm::mat4& viewProj, const glm::vec3& point, float& visible)
+{
+    glm::vec4 clip = viewProj * glm::vec4(point, 1.0f);
+    visible = clip.w > 0.0f ? 1.0f : 0.0f;
+    if (clip.w <= 0.0f)
+        return glm::vec2(0.5f);
+    return glm::vec2(clip) / clip.w * 0.5f + 0.5f;
 }
 
 // Espalha rochas e estruturas ao redor da cratera de forma determinística (semente fixa)
@@ -164,7 +244,6 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWwindow* window = glfwCreateWindow(1280, 720, "The Anomaly", nullptr, nullptr);
     if (!window) {
@@ -193,13 +272,23 @@ int main()
     std::vector<Mesh> rockMeshes = { createRockMesh(1), createRockMesh(2), createRockMesh(3) };
     std::vector<SceneObject> rocks = createRocks(rockMeshes);
 
-    // VAO vazio para os passes de tela cheia (os vértices são gerados no shader)
-    GLuint fullscreenVao;
-    glGenVertexArrays(1, &fullscreenVao);
+    // VAO vazio para os passes de tela cheia e para as partículas (os vértices são gerados no shader)
+    GLuint emptyVao;
+    glGenVertexArrays(1, &emptyVao);
 
     const glm::vec3 lightDir = glm::normalize(glm::vec3(-0.84f, 0.26f, -0.48f));
     const glm::vec3 terrainColor(0.13f, 0.09f, 0.17f);
 
+    // Câmera ortográfica da luz principal, cobrindo a região em volta da cratera.
+    // A luz, o terreno e as rochas não se movem, então o shadow map só precisa ser
+    // gerado de novo quando os shaders são recarregados.
+    const glm::mat4 lightView = glm::lookAt(lightDir * 120.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::mat4 lightProjection = glm::ortho(-45.0f, 45.0f, -45.0f, 45.0f, 1.0f, 250.0f);
+    const glm::mat4 lightViewProj = lightProjection * lightView;
+    RenderTarget shadowMap = createShadowTarget(SHADOW_MAP_SIZE);
+    bool shadowMapDirty = true;
+
+    PostTargets post;
     float animationTime = 0.0f;
     double lastFrameTime = glfwGetTime();
     double fpsTimer = lastFrameTime;
@@ -217,17 +306,43 @@ int main()
 
         if (reloadRequested) {
             reloadRequested = false;
-            std::cout << (loadPrograms(programs) ? "Shaders recarregados\n" : "Mantendo os shaders anteriores\n");
+            bool reloaded = loadPrograms(programs);
+            shadowMapDirty = shadowMapDirty || reloaded;
+            std::cout << (reloaded ? "Shaders recarregados\n" : "Mantendo os shaders anteriores\n");
         }
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
-        if (width == 0 || height == 0) {
+        if (width == 0 || height == 0 || glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
             // Janela minimizada: espera um evento em vez de repetir o laço sem parar
             glfwWaitEvents();
             continue;
         }
-        glViewport(0, 0, width, height);
+        if (width != post.scene.width || height != post.scene.height) {
+            deletePostTargets(post);
+            post = createPostTargets(width, height);
+        }
+
+        // 0) Shadow map: profundidade do terreno e das rochas vista pela luz
+        if (shadowMapDirty) {
+            shadowMapDirty = false;
+            bindTarget(shadowMap);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+            // Desloca a profundidade para evitar "acne" (sombra da superfície sobre ela mesma)
+            glEnable(GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(2.0f, 4.0f);
+            glUseProgram(programs.shadow);
+            setUniform(programs.shadow, "uLightViewProj", lightViewProj);
+            setUniform(programs.shadow, "uModel", glm::mat4(1.0f));
+            drawMesh(terrain);
+            for (const SceneObject& rock : rocks) {
+                setUniform(programs.shadow, "uModel", rock.model);
+                drawMesh(*rock.mesh);
+            }
+            glDisable(GL_POLYGON_OFFSET_FILL);
+        }
 
         glm::vec3 cameraPos = camera.position();
         // Mantém a câmera acima do terreno quando ela está baixa e afastada
@@ -248,19 +363,24 @@ int main()
             setUniform(program, "uResolution", resolution);
         };
 
+        // A cena é desenhada em uma textura HDR, que guarda brilhos acima de 1
+        bindTarget(post.scene);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // 1) Céu: triângulo de tela cheia, sem depth
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         setCommonUniforms(programs.sky);
-        glBindVertexArray(fullscreenVao);
+        glBindVertexArray(emptyVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         // 2) Terreno e rochas: geometria convencional
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
         setCommonUniforms(programs.scene);
+        setUniform(programs.scene, "uLightViewProj", lightViewProj);
+        setUniform(programs.scene, "uShadowMap", 0);
+        bindTexture(0, shadowMap.texture);
 
         setUniform(programs.scene, "uModel", glm::mat4(1.0f));
         setUniform(programs.scene, "uNormalMatrix", glm::mat3(1.0f));
@@ -276,14 +396,81 @@ int main()
             drawMesh(*rock.mesh);
         }
 
-        // 3) Escultura por ray marching. O shader escreve gl_FragDepth para se
-        //    misturar corretamente com o terreno e as rochas.
+        // 3) Partículas orbitais: uma instância por partícula, somadas à cena (blending aditivo).
+        //    Elas escrevem profundidade para que a escultura, desenhada depois, as esconda corretamente.
         glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        setCommonUniforms(programs.particles);
+        setUniform(programs.particles, "uCameraRight", glm::vec3(view[0][0], view[1][0], view[2][0]));
+        setUniform(programs.particles, "uCameraUp", glm::vec3(view[0][1], view[1][1], view[2][1]));
+        setUniform(programs.particles, "uParticleCount", PARTICLE_COUNT);
+        glBindVertexArray(emptyVao);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, PARTICLE_COUNT);
+
+        // 4) Escultura por ray marching. O shader escreve gl_FragDepth para se
+        //    misturar corretamente com o terreno, as rochas e as partículas.
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         setCommonUniforms(programs.sculpture);
-        glBindVertexArray(fullscreenVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDisable(GL_BLEND);
+
+        // Pós-processamento: todos os passes são triângulos de tela cheia, sem depth
+        glDisable(GL_DEPTH_TEST);
+
+        // 5) Partes brilhantes da cena, em 1/4 da resolução
+        bindTarget(post.bright);
+        glUseProgram(programs.bright);
+        setUniform(programs.bright, "uScene", 0);
+        bindTexture(0, post.scene.texture);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        // 6) God rays a partir do núcleo e da estrela principal
+        // Mesma fórmula de artifactCenter() em common.glsl
+        glm::vec3 coreCenter(0.0f, 2.6f + 0.12f * std::sin(animationTime * 0.6f), 0.0f);
+        float coreVisible, sunVisible;
+        glm::vec2 coreScreen = toScreen(viewProj, coreCenter, coreVisible);
+        glm::vec2 sunScreen = toScreen(viewProj, cameraPos + lightDir * 200.0f, sunVisible);
+
+        bindTarget(post.rays);
+        glUseProgram(programs.godRays);
+        setUniform(programs.godRays, "uBright", 0);
+        setUniform(programs.godRays, "uCoreScreen", coreScreen);
+        setUniform(programs.godRays, "uCoreRays", coreVisible);
+        setUniform(programs.godRays, "uSunScreen", sunScreen);
+        setUniform(programs.godRays, "uSunRays", sunVisible);
+        bindTexture(0, post.bright.texture);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        // 7) Bloom: desfoque gaussiano separável, alternando entre dois framebuffers
+        glUseProgram(programs.blur);
+        setUniform(programs.blur, "uImage", 0);
+        GLuint source = post.bright.texture;
+        for (int i = 0; i < BLUR_ITERATIONS; i++) {
+            bindTarget(post.blurA);
+            setUniform(programs.blur, "uDirection", glm::vec2(1.0f, 0.0f));
+            bindTexture(0, source);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+
+            bindTarget(post.blurB);
+            setUniform(programs.blur, "uDirection", glm::vec2(0.0f, 1.0f));
+            bindTexture(0, post.blurA.texture);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            source = post.blurB.texture;
+        }
+
+        // 8) Composição final na tela: cena + bloom + god rays, com tone mapping
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, width, height);
+        glUseProgram(programs.composite);
+        setUniform(programs.composite, "uScene", 0);
+        setUniform(programs.composite, "uBloom", 1);
+        setUniform(programs.composite, "uRays", 2);
+        setUniform(programs.composite, "uBloomStrength", bloomEnabled ? 0.8f : 0.0f);
+        setUniform(programs.composite, "uRaysStrength", godRaysEnabled ? 0.6f : 0.0f);
+        bindTexture(0, post.scene.texture);
+        bindTexture(1, post.blurB.texture);
+        bindTexture(2, post.rays.texture);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -301,10 +488,10 @@ int main()
     deleteMesh(terrain);
     for (Mesh& mesh : rockMeshes)
         deleteMesh(mesh);
-    glDeleteVertexArrays(1, &fullscreenVao);
-    glDeleteProgram(programs.sky);
-    glDeleteProgram(programs.scene);
-    glDeleteProgram(programs.sculpture);
+    glDeleteVertexArrays(1, &emptyVao);
+    deleteRenderTarget(shadowMap);
+    deletePostTargets(post);
+    deletePrograms(programs);
     glfwTerminate();
     return 0;
 }
