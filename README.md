@@ -42,11 +42,15 @@ cmake --build build -j
 
 ### Windows (Visual Studio)
 
-```bash
+É preciso ter o Visual Studio com a carga de trabalho "Desenvolvimento para desktop com C++" e o CMake. No PowerShell, rode um comando por vez (o Windows PowerShell não aceita `&&`):
+
+```powershell
 cmake -S . -B build
 cmake --build build --config Release
-build\Release\anomaly.exe
+.\build\Release\anomaly.exe
 ```
+
+Com MinGW ou Ninja, o executável fica em `.\build\anomaly.exe`.
 
 Também é possível abrir a pasta diretamente no Visual Studio ou no CLion, que reconhecem o `CMakeLists.txt`.
 
