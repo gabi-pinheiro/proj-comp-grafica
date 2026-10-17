@@ -4,6 +4,7 @@ uniform mat4 uViewProj;
 uniform vec3 uCameraRight;
 uniform vec3 uCameraUp;
 uniform int uParticleCount;
+uniform float uSpread;   // 0 = todas dentro do núcleo, 1 = todas nas órbitas
 
 #include "common.glsl"
 
@@ -60,6 +61,13 @@ void main()
     float angle = 6.2831853 * (float(indexInRing) + 0.4 * hash11(id + 3.1)) / float(perRing);
     angle += uTime * speed;
 
+    // Ao ligar/desligar, cada partícula sai (ou volta) com um atraso aleatório diferente
+    float delay = 0.5 * hash11(id + 9.9);
+    float progress = clamp(uSpread * 1.5 - delay, 0.0, 1.0);
+    float eased = progress * progress * (3.0 - 2.0 * progress);
+    // Perto do núcleo a partícula dá voltas extras, formando uma espiral
+    angle += (1.0 - eased) * 6.0;
+
     // Ruído procedural desloca as partículas para dentro/fora e para cima/baixo
     float offsetRadius = 0.5 * (noise1(angle * 3.0 + r * 17.0 + uTime * 0.3) - 0.5);
     float offsetHeight = 0.3 * (noise1(angle * 5.0 + r * 31.0 - uTime * 0.2) - 0.5);
@@ -67,13 +75,16 @@ void main()
 
     // Cada anel tem uma inclinação diferente
     local = rotateZ(0.35 * r - 0.5) * rotateX(0.3 * r - 0.2) * local;
+    local *= eased;
 
     // Quadrado sempre virado para a câmera (billboard)
-    float size = 0.02 + 0.035 * hash11(id + 7.7);
+    float size = (0.02 + 0.035 * hash11(id + 7.7)) * smoothstep(0.0, 0.15, progress);
     vec3 worldPos = artifactCenter() + local + (uCameraRight * vCorner.x + uCameraUp * vCorner.y) * size;
 
     float twinkle = 0.6 + 0.4 * sin(uTime * 3.0 + id);
     vColor = mix(CYAN, MAGENTA, hash11(id + 1.3)) * (1.5 + 2.5 * hash11(id + 5.5)) * twinkle;
+    // Mais brilhante enquanto está perto do núcleo, como se fosse energia saindo dele
+    vColor *= 1.0 + 3.0 * (1.0 - eased);
 
     gl_Position = uViewProj * vec4(worldPos, 1.0);
 }

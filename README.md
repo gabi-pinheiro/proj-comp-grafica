@@ -72,6 +72,7 @@ Os mesmos comandos do Linux funcionam com as Xcode Command Line Tools e o CMake 
 | `F5` | Recarrega os shaders |
 | `B` | Liga/desliga o bloom |
 | `G` | Liga/desliga os god rays |
+| `P` | Liga/desliga as partículas (elas voltam para o núcleo ou saem dele) |
 | `Esc` | Fecha o programa |
 
 ## Estrutura do projeto
@@ -159,6 +160,7 @@ Em `particles.vert`, 800 partículas são desenhadas com uma única chamada `glD
 - **Velocidades orbitais diferentes**: inspiradas na terceira lei de Kepler, órbitas maiores giram mais devagar (velocidade proporcional a `raio^-1,5`).
 - **Ruído procedural**: um ruído 1D desloca cada partícula para dentro/fora e para cima/baixo, e cada anel tem uma inclinação diferente.
 - **Transparência e blending**: cada partícula é um quadrado virado para a câmera (*billboard*) com brilho gaussiano, somado à cena com blending aditivo (`glBlendFunc(GL_ONE, GL_ONE)`). Como as partículas são brilhantes, elas também alimentam o bloom.
+- **Ligar e desligar (`P`)**: um valor `uSpread` vai de 0 a 1 em 2 segundos (usando `deltaTime`). Cada partícula tem um atraso aleatório e uma curva suave (`smoothstep`), e enquanto está perto do núcleo dá voltas extras, então o conjunto sai do núcleo em espiral, ou volta para ele, ficando mais brilhante e menor até sumir.
 
 ### Detalhes de robustez
 

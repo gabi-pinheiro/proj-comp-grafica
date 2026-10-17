@@ -67,6 +67,7 @@ static bool autoOrbit = false;
 static bool reloadRequested = false;
 static bool bloomEnabled = true;
 static bool godRaysEnabled = true;
+static bool particlesEnabled = true;
 
 static void keyCallback(GLFWwindow* window, int key, int, int action, int)
 {
@@ -81,6 +82,7 @@ static void keyCallback(GLFWwindow* window, int key, int, int action, int)
     case GLFW_KEY_F5: reloadRequested = true; break;
     case GLFW_KEY_B: bloomEnabled = !bloomEnabled; break;
     case GLFW_KEY_G: godRaysEnabled = !godRaysEnabled; break;
+    case GLFW_KEY_P: particlesEnabled = !particlesEnabled; break;
     }
 }
 
@@ -290,6 +292,7 @@ int main()
 
     PostTargets post;
     float animationTime = 0.0f;
+    float particleSpread = 1.0f;
     double lastFrameTime = glfwGetTime();
     double fpsTimer = lastFrameTime;
     int frameCount = 0;
@@ -301,6 +304,11 @@ int main()
 
         if (!animationPaused)
             animationTime += deltaTime;
+
+        // Transição das partículas (2 segundos) entre o núcleo (0) e as órbitas (1)
+        float spreadSpeed = deltaTime / 2.0f;
+        particleSpread += particlesEnabled ? spreadSpeed : -spreadSpeed;
+        particleSpread = glm::clamp(particleSpread, 0.0f, 1.0f);
         if (autoOrbit)
             camera.yaw += deltaTime * 0.08f;
 
@@ -400,17 +408,21 @@ int main()
         //    Elas escrevem profundidade para que a escultura, desenhada depois, as esconda corretamente.
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
-        setCommonUniforms(programs.particles);
-        setUniform(programs.particles, "uCameraRight", glm::vec3(view[0][0], view[1][0], view[2][0]));
-        setUniform(programs.particles, "uCameraUp", glm::vec3(view[0][1], view[1][1], view[2][1]));
-        setUniform(programs.particles, "uParticleCount", PARTICLE_COUNT);
-        glBindVertexArray(emptyVao);
-        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, PARTICLE_COUNT);
+        if (particleSpread > 0.0f) {
+            setCommonUniforms(programs.particles);
+            setUniform(programs.particles, "uCameraRight", glm::vec3(view[0][0], view[1][0], view[2][0]));
+            setUniform(programs.particles, "uCameraUp", glm::vec3(view[0][1], view[1][1], view[2][1]));
+            setUniform(programs.particles, "uParticleCount", PARTICLE_COUNT);
+            setUniform(programs.particles, "uSpread", particleSpread);
+            glBindVertexArray(emptyVao);
+            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, PARTICLE_COUNT);
+        }
 
         // 4) Escultura por ray marching. O shader escreve gl_FragDepth para se
         //    misturar corretamente com o terreno, as rochas e as partículas.
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         setCommonUniforms(programs.sculpture);
+        glBindVertexArray(emptyVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDisable(GL_BLEND);
 
