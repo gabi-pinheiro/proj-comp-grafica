@@ -1,38 +1,50 @@
 #include "shader.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <sstream>
+#include <vector>
 #include <glm/gtc/type_ptr.hpp>
 
 // GLSL não tem #include, então os arquivos incluídos são colados no lugar da diretiva.
 // Isso permite compartilhar a SDF da escultura entre vários shaders.
-static std::string readShaderFile(const std::string& path)
+// openFiles guarda a cadeia de inclusões atual, para detectar inclusões cíclicas.
+static bool readShaderFile(const std::string& path, std::vector<std::string>& openFiles, std::string& output)
 {
+    if (std::find(openFiles.begin(), openFiles.end(), path) != openFiles.end()) {
+        std::cerr << "Inclusao ciclica do shader: " << path << "\n";
+        return false;
+    }
+
     std::ifstream file(path);
     if (!file) {
         std::cerr << "Nao foi possivel abrir o shader: " << path << "\n";
-        return "";
+        return false;
     }
 
+    openFiles.push_back(path);
     std::string folder = path.substr(0, path.find_last_of("/\\") + 1);
-    std::stringstream result;
     std::string line;
-    while (std::getline(file, line)) {
+    bool ok = true;
+    while (ok && std::getline(file, line)) {
         if (line.rfind("#include", 0) == 0) {
             size_t first = line.find('"');
             size_t last = line.find_last_of('"');
-            result << readShaderFile(folder + line.substr(first + 1, last - first - 1)) << "\n";
+            ok = readShaderFile(folder + line.substr(first + 1, last - first - 1), openFiles, output);
         } else {
-            result << line << "\n";
+            output += line + "\n";
         }
     }
-    return result.str();
+    openFiles.pop_back();
+    return ok;
 }
 
 static GLuint compileShader(GLenum type, const std::string& path)
 {
-    std::string source = readShaderFile(path);
+    std::string source;
+    std::vector<std::string> openFiles;
+    if (!readShaderFile(path, openFiles, source))
+        return 0;
     const char* sourcePtr = source.c_str();
 
     GLuint shader = glCreateShader(type);

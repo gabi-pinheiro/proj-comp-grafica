@@ -6,9 +6,9 @@ Uma cena 3D de ficção científica: um planeta alienígena escuro, com um gigan
 
 ![Vista inicial](docs/screenshots/vista-inicial.png)
 
-| Contra a estrela principal | Vista de cima (sombra da escultura no chão) |
+| Sem bloom e god rays (teclas `B` e `G`) | Contra a estrela principal |
 |---|---|
-| ![](docs/screenshots/vista-estrela.png) | ![](docs/screenshots/vista-alta.png) |
+| ![](docs/screenshots/sem-bloom-godrays.png) | ![](docs/screenshots/vista-estrela.png) |
 
 ## Tecnologias
 
@@ -70,6 +70,9 @@ Os mesmos comandos do Linux funcionam com as Xcode Command Line Tools e o CMake 
 | `Espaço` | Pausa/retoma a animação |
 | `R` | Volta para o enquadramento inicial |
 | `F5` | Recarrega os shaders |
+| `B` | Liga/desliga o bloom |
+| `G` | Liga/desliga os god rays |
+| `P` | Liga/desliga as partículas (elas voltam para o núcleo ou saem dele) |
 | `Esc` | Fecha o programa |
 
 ## Estrutura do projeto
@@ -77,28 +80,39 @@ Os mesmos comandos do Linux funcionam com as Xcode Command Line Tools e o CMake 
 ```
 src/
   main.cpp          janela, câmera, laço principal e ordem dos passes de renderização
-  shader.cpp/.h     carregamento e compilação dos shaders (com suporte a #include)
+  shader.cpp/.h     carregamento e compilação dos shaders (com #include e proteção contra ciclos)
   geometry.cpp/.h   malhas do terreno e das rochas
+  framebuffer.cpp/.h  framebuffers do shadow map e do pós-processamento
 shaders/
   common.glsl         uniforms, paleta, céu, neblina e tone mapping compartilhados
   sculpture_sdf.glsl  SDFs da escultura e sombra suave
   sculpture.frag      ray marching e materiais da escultura
   sky.frag            céu, estrelas, estrela principal e planeta com anéis
-  scene.vert/.frag    terreno e rochas (geometria convencional)
-  fullscreen.vert     triângulo de tela cheia usado pelo céu e pela escultura
+  scene.vert/.frag    terreno e rochas (geometria convencional, com shadow mapping)
+  shadow.vert/.frag   profundidade vista pela luz (shadow map)
+  particles.vert/.frag  partículas orbitais (instancing e billboards)
+  bright.frag         separa as partes mais brilhantes da cena
+  blur.frag           desfoque gaussiano separável do bloom
+  godrays.frag        god rays em espaço de tela
+  composite.frag      junta cena, bloom e god rays e aplica o tone mapping
+  fullscreen.vert     triângulo de tela cheia usado pelo céu, escultura e pós-processamento
 external/glad/        loader do OpenGL gerado pelo GLAD
 docs/screenshots/     capturas da aplicação
 ```
 
 ## Como a cena é renderizada
 
-A cena usa uma abordagem **híbrida**, desenhada em três passes por quadro:
+A cena usa uma abordagem **híbrida**. Primeiro tudo é desenhado em uma **textura HDR** (ponto flutuante, `RGBA16F`), que guarda brilhos acima de 1; depois vem o pós-processamento.
 
+0. **Shadow map** — o terreno e as rochas são desenhados do ponto de vista da estrela principal, com projeção ortográfica, guardando só a profundidade. Como a luz e esses objetos não se movem, isso é feito uma única vez (e de novo ao pressionar F5).
 1. **Céu** — um triângulo que cobre a tela. Para cada pixel, o shader reconstrói a direção do raio da câmera (com a inversa da matriz view-projection) e calcula o gradiente do céu, as estrelas, o disco da estrela principal e o planeta com anéis (interseção raio-esfera e raio-plano).
 2. **Terreno e rochas** — geometria convencional com VBO/VAO. O terreno é uma grade cuja altura vem de *value noise* (fBm) com uma cratera no centro e montanhas ao longe. As rochas são esferas low-poly deformadas por ruído e com normais por face; as estruturas altas ao fundo são as mesmas rochas esticadas.
-3. **Escultura** — outro triângulo de tela cheia, agora com **ray marching**. O shader escreve `gl_FragDepth` com a profundidade do ponto encontrado, então a escultura é corretamente ocultada pelas rochas e se mistura com o resto da cena pelo depth buffer.
+3. **Partículas orbitais** — desenhadas com *instancing* e blending aditivo (ver abaixo).
+4. **Escultura** — outro triângulo de tela cheia, agora com **ray marching**. O shader escreve `gl_FragDepth` com a profundidade do ponto encontrado, então a escultura é corretamente ocultada pelas rochas e se mistura com o resto da cena pelo depth buffer.
+5. **Pós-processamento** (em 1/4 da resolução): separa as partes brilhantes, calcula os god rays e o bloom.
+6. **Composição** — soma cena + bloom + god rays e só então aplica o tone mapping ACES e a correção gama.
 
-Os três shaders compartilham `common.glsl` (paleta, direção da luz, neblina, tone mapping), o que mantém as cores e a iluminação coerentes. O terreno e as rochas também incluem `sculpture_sdf.glsl` para receber a **sombra da escultura**.
+Os shaders compartilham `common.glsl` (paleta, direção da luz, neblina, tone mapping), o que mantém as cores e a iluminação coerentes. O terreno e as rochas também incluem `sculpture_sdf.glsl` para receber a **sombra da escultura** e calcular quanto da luz do núcleo os atinge.
 
 ### SDFs e construção da escultura
 
@@ -131,6 +145,30 @@ Em `shaders/sculpture.frag`, para cada pixel:
 
 Todas as animações usam o tempo acumulado (`deltaTime` somado a cada quadro), então a velocidade não depende da taxa de quadros: flutuação vertical do artefato, rotação lenta do conjunto, anéis girando em eixos diferentes, núcleo pulsando e se deformando, e ondas de energia saindo do artefato pelo chão.
 
+### Iluminação e pós-processamento
+
+- **Shadow mapping** (`scene.frag`): cada ponto do terreno é levado para o espaço da luz e sua profundidade é comparada com a guardada no shadow map. A textura usa `sampler2DShadow`, em que o hardware faz a comparação, e 9 amostras vizinhas (PCF) suavizam a borda da sombra. Um pequeno deslocamento (*polygon offset* e *bias*) evita a "acne" de sombra. A sombra final é a menor entre a do shadow map (rochas e relevo) e a da escultura (ray marching).
+- **Luz do núcleo**: uma luz pontual colorida, que alterna entre ciano e magenta com a pulsação. Para saber se um ponto do chão a recebe, o shader marcha pela SDF da escultura do ponto até o núcleo (`coreVisibility`): a casca, os anéis e o espinho bloqueiam a luz, que só escapa pelos furos e pela faixa aberta, criando manchas no chão.
+- **Bloom**: `bright.frag` mantém só o que passa de 1,0 em HDR (núcleo, gemas, estrela, partículas). `blur.frag` desfoca com uma gaussiana **separável** (um passe horizontal e um vertical, repetidos 3 vezes, alternando entre dois framebuffers). O resultado é somado à cena.
+- **God rays**: para cada pixel, `godrays.frag` soma a imagem de brilho ao longo da linha até a posição do núcleo (e da estrela) na tela, com peso decrescente. O que estiver na frente da luz é escuro na imagem de brilho e por isso interrompe os raios. É uma aproximação em espaço de tela, muito mais barata que uma simulação volumétrica real.
+
+### Partículas orbitais
+
+Em `particles.vert`, 800 partículas são desenhadas com uma única chamada `glDrawArraysInstanced`, sem nenhum buffer de vértices: a posição de cada uma é calculada a partir do índice da instância (`gl_InstanceID`) e do tempo.
+
+- **Repetição polar**: as partículas são divididas em 4 anéis, e dentro de cada anel ficam em ângulos igualmente espaçados (com uma pequena variação aleatória).
+- **Velocidades orbitais diferentes**: inspiradas na terceira lei de Kepler, órbitas maiores giram mais devagar (velocidade proporcional a `raio^-1,5`).
+- **Ruído procedural**: um ruído 1D desloca cada partícula para dentro/fora e para cima/baixo, e cada anel tem uma inclinação diferente.
+- **Transparência e blending**: cada partícula é um quadrado virado para a câmera (*billboard*) com brilho gaussiano, somado à cena com blending aditivo (`glBlendFunc(GL_ONE, GL_ONE)`). Como as partículas são brilhantes, elas também alimentam o bloom.
+- **Ligar e desligar (`P`)**: um valor `uSpread` vai de 0 a 1 em 2 segundos (usando `deltaTime`). Cada partícula tem um atraso aleatório e uma curva suave (`smoothstep`), e enquanto está perto do núcleo dá voltas extras, então o conjunto sai do núcleo em espiral, ou volta para ele, ficando mais brilhante e menor até sumir.
+
+### Detalhes de robustez
+
+- A câmera não desce abaixo do terreno: a altura dela é limitada por `terrainHeight()` no ponto onde ela está.
+- O `#include` dos shaders guarda a lista de arquivos abertos e recusa inclusões cíclicas, em vez de entrar em recursão infinita.
+- Com a janela minimizada, o laço usa `glfwWaitEvents()` e não ocupa a CPU.
+- Todas as chamadas de `smoothstep` usam a primeira borda menor que a segunda (o caso contrário não é definido pelo GLSL).
+
 ## Funcionalidades prontas
 
 - [x] Projeto C++/OpenGL com CMake, compilando em Linux (testado) e preparado para Windows/macOS
@@ -140,21 +178,22 @@ Todas as animações usam o tempo acumulado (`deltaTime` somado a cada quadro), 
 - [x] Terreno procedural simples com cratera e montanhas ao longe
 - [x] Rochas low-poly e estruturas distantes
 - [x] Céu com estrelas, estrela principal e planeta com anéis
-- [x] Neblina e tone mapping consistentes entre todos os passes
+- [x] Neblina consistente entre todos os passes e tone mapping em um passe final
 - [x] Integração por profundidade entre ray marching e geometria rasterizada
 - [x] Animações independentes das partes do artefato
 - [x] Câmera orbital com mouse e órbita automática
 - [x] Recarregamento de shaders em tempo de execução (F5)
+- [x] Shadow mapping com PCF para terreno e rochas
+- [x] Luz colorida do núcleo bloqueada pela casca da escultura
+- [x] Renderização HDR com bloom e god rays
+- [x] Partículas orbitais com instancing e blending aditivo
 
 ## Melhorias planejadas
 
-- Sombras das rochas e do terreno (shadow mapping)
-- Partículas orbitando a escultura
 - Mais componentes e deformações na escultura
 - Terreno mais detalhado e novas formações alienígenas
-- Bloom para as partes emissivas
 - Controles de câmera mais completos e interação com elementos da cena
 
 ## Desempenho
 
-O ray marching é executado apenas dentro da esfera envolvente da escultura. Em uma GPU dedicada ou integrada recente a cena roda em tempo real; no ambiente de desenvolvimento, sem GPU (renderização por software com Mesa llvmpipe), roda a cerca de 4 FPS em 1280×720. A taxa de quadros aparece no título da janela.
+O ray marching é executado apenas dentro da esfera envolvente da escultura. Em uma GPU dedicada ou integrada recente a cena roda em tempo real; no ambiente de desenvolvimento, sem GPU (renderização por software com Mesa llvmpipe), roda a cerca de 3 FPS em 1280×720. A taxa de quadros aparece no título da janela.

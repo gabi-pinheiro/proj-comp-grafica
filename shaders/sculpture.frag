@@ -108,7 +108,7 @@ void main()
     float tClosest = max(dot(center - ro, rd), 0.0);
     float distToCore = length(ro + rd * tClosest - center);
     float glow = exp(-4.0 * max(distToCore - 0.35, 0.0)) * (0.2 + 0.15 * corePulse());
-    glow *= smoothstep(0.9 * BOUND_RADIUS, 0.3 * BOUND_RADIUS, distToCore);
+    glow *= 1.0 - smoothstep(0.3 * BOUND_RADIUS, 0.9 * BOUND_RADIUS, distToCore);
     vec3 glowColor = coreColor() * glow;
 
     if (found) {
@@ -117,13 +117,13 @@ void main()
         if (t > tClosest)
             color += glowColor * 0.6;
         color = applyFog(color, t, rd);
-        fragColor = vec4(toneMap(color), 1.0);
+        fragColor = vec4(color, 1.0);
         gl_FragDepth = depthFromPoint(p);
     } else {
         if (glow < 0.003)
             discard;
         // Alfa zero com blending pré-multiplicado: o halo é somado ao que já está na tela
-        fragColor = vec4(toneMap(glowColor), 0.0);
+        fragColor = vec4(glowColor, 0.0);
         gl_FragDepth = depthFromPoint(ro + rd * tClosest);
     }
 }
