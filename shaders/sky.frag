@@ -27,7 +27,7 @@ vec3 stars(vec3 dir)
 
     float dist = length(grid - cell - 0.5);
     float twinkle = 0.6 + 0.4 * sin(uTime * 2.0 + h * 400.0);
-    float brightness = smoothstep(0.5, 0.0, dist) * (h - 0.993) / 0.007;
+    float brightness = (1.0 - smoothstep(0.0, 0.5, dist)) * (h - 0.993) / 0.007;
     return vec3(0.85, 0.85, 1.0) * brightness * twinkle * 2.0 * smoothstep(0.0, 0.2, dir.y);
 }
 
@@ -65,7 +65,7 @@ void main()
         float ringDist = length(rd * ringT - planetCenter) / planetRadius;
         if (ringDist > 1.35 && ringDist < 2.3) {
             float stripes = 0.6 + 0.4 * sin(ringDist * 14.0);
-            float fade = smoothstep(1.35, 1.5, ringDist) * smoothstep(2.3, 2.1, ringDist);
+            float fade = smoothstep(1.35, 1.5, ringDist) * (1.0 - smoothstep(2.1, 2.3, ringDist));
             color = mix(color, vec3(0.60, 0.45, 0.62) * 0.4, 0.6 * stripes * fade);
         }
     }

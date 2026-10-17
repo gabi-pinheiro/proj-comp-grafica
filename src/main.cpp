@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -222,12 +223,15 @@ int main()
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         if (width == 0 || height == 0) {
-            glfwPollEvents();
+            // Janela minimizada: espera um evento em vez de repetir o laço sem parar
+            glfwWaitEvents();
             continue;
         }
         glViewport(0, 0, width, height);
 
         glm::vec3 cameraPos = camera.position();
+        // Mantém a câmera acima do terreno quando ela está baixa e afastada
+        cameraPos.y = std::max(cameraPos.y, terrainHeight(cameraPos.x, cameraPos.z) + 0.5f);
         glm::mat4 view = glm::lookAt(cameraPos, camera.target, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 projection = glm::perspective(glm::radians(50.0f), (float)width / height, 0.1f, 300.0f);
         glm::mat4 viewProj = projection * view;

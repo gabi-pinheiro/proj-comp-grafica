@@ -108,7 +108,7 @@ void main()
     float tClosest = max(dot(center - ro, rd), 0.0);
     float distToCore = length(ro + rd * tClosest - center);
     float glow = exp(-4.0 * max(distToCore - 0.35, 0.0)) * (0.2 + 0.15 * corePulse());
-    glow *= smoothstep(0.9 * BOUND_RADIUS, 0.3 * BOUND_RADIUS, distToCore);
+    glow *= 1.0 - smoothstep(0.3 * BOUND_RADIUS, 0.9 * BOUND_RADIUS, distToCore);
     vec3 glowColor = coreColor() * glow;
 
     if (found) {
