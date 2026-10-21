@@ -176,14 +176,14 @@ void main()
     vec3 tunnel = tunnelColor(p, f);
     vec3 color = mix(alien * (1.0 - 0.7 * gate), tunnel, gate);
 
-    // 3) Clarão e corte para preto: o ponto de fuga engole a tela e tudo apaga
-    float blackout = smoothstep(0.82, 0.97, f);
-    color += vec3(1.0) * exp(-r * 3.5) * 3.0 * smoothstep(0.75, 0.90, f) * (1.0 - blackout);
-    color *= 1.0 - blackout;
+    // 3) Clarão total: o ponto de fuga engole a tela e tudo vira branco
+    //    (continua a luz do núcleo/túnel em vez de cortar para preto)
+    float whiteout = smoothstep(0.82, 0.97, f);
+    color += vec3(1.0) * exp(-r * 3.5) * 3.0 * smoothstep(0.75, 0.90, f) * (1.0 - whiteout);
+    color = mix(color, vec3(1.0), whiteout);
 
-    // 4) Acordar na sala de aula: as pálpebras abrem devagar sobre a foto (que já
-    //    começa preta atrás delas), a imagem entra em foco e a "cabeça" olha para
-    //    os lados — para a esquerda, para a direita, e volta ao centro.
+    // 4) Acordar na sala de aula: a foto emerge do branco desfocada, a "pessoa"
+    //    pisca uma vez, a imagem entra em foco e a "cabeça" olha para os lados.
     if (uClassroomTime >= 0.0) {
         float t = uClassroomTime;
         float blur = 4.0 * (1.0 - smoothstep(0.5, 3.5, t));
@@ -196,10 +196,12 @@ void main()
         float zoom = 1.10 - 0.02 * smoothstep(0.0, 6.0, t);
         vec3 room = classroom((vUV - 0.5) * zoom + 0.5 + vec2(pan, 0.0), aspect, blur);
 
-        // Pálpebras: começam fechadas (tela preta) e abrem devagar, com um tremer
-        float open = smoothstep(0.8, 3.5, t);
-        open += 0.15 * sin(t * 9.0) * smoothstep(0.8, 1.2, t) * (1.0 - smoothstep(1.5, 3.0, t));
-        float lidEdge = clamp(open, 0.0, 1.0) * 0.75;
+        // A sala emerge do branco da luz (continuação suave do clarão)
+        room = mix(vec3(1.0), room, smoothstep(0.0, 1.2, t));
+
+        // Uma piscada: as pálpebras fecham e reabrem rápido uma vez
+        float blink = smoothstep(1.7, 1.9, t) * (1.0 - smoothstep(2.1, 2.8, t));
+        float lidEdge = clamp(blink, 0.0, 1.0) * 0.75;
         room *= 1.0 - smoothstep(lidEdge - 0.03, lidEdge, abs(p.y) + 0.2 * p.x * p.x);
 
         color = mix(color, room, smoothstep(0.97, 1.0, f));
