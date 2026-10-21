@@ -58,6 +58,82 @@ vec3 classroom(vec2 uv, float aspect, float blur)
     return textureLod(uClassroom, (uv - 0.5) * scale + 0.5, blur).rgb;
 }
 
+// ================= Túnel 3D (ray marching, a mesma técnica da escultura) =================
+
+const float TUNNEL_R = 1.0;       // raio do corredor
+const float RING_SPACING = 1.8;   // distância entre os anéis
+const float RING_SIZE = 0.08;     // espessura do torus de cada anel
+
+// SDF do túnel: parede interna do cilindro + anéis torus repetidos ao longo de z
+// com mod (repetição, como os cortes do anel externo da escultura).
+// Retorna (distância, material: 0 = parede, 1 = anel).
+vec2 tunnelMap(vec3 p)
+{
+    // Estamos dentro do cilindro: a distância até a parede é R - len(p.xy)
+    float wall = TUNNEL_R - length(p.xy);
+    // Um torus encostado na parede a cada RING_SPACING em z
+    float pz = mod(p.z, RING_SPACING) - 0.5 * RING_SPACING;
+    float ring = length(vec2(length(p.xy) - (TUNNEL_R + 0.01), pz)) - RING_SIZE;
+    return ring < wall ? vec2(ring, 1.0) : vec2(wall, 0.0);
+}
+
+// Normal pelo gradiente da SDF (diferenças finitas centrais)
+vec3 tunnelNormal(vec3 p)
+{
+    vec2 e = vec2(0.002, 0.0);
+    return normalize(vec3(
+        tunnelMap(p + e.xyy).x - tunnelMap(p - e.xyy).x,
+        tunnelMap(p + e.yxy).x - tunnelMap(p - e.yxy).x,
+        tunnelMap(p + e.yyx).x - tunnelMap(p - e.yyx).x));
+}
+
+// Sphere tracing dentro do túnel: a câmera avança em z com o tempo, atravessando
+// um anel atrás do outro — é o movimento de câmera que dá a sensação de viagem.
+vec3 tunnelColor(vec2 p, float f)
+{
+    // Posição da câmera dentro do corredor, com um leve balanço
+    vec3 ro = vec3(0.06 * sin(uTime * 0.7), 0.06 * sin(uTime * 0.9 + 1.0), uTime * 3.0);
+    // Direção do raio por pixel: perspectiva real, com uma leve guinada da câmera
+    vec3 rd = normalize(vec3(p, 1.6));
+    rd.xy = rotate(rd.xy, 0.03 * sin(uTime * 0.5));
+
+    float t = 0.0;
+    float mat = -1.0;
+    for (int i = 0; i < 40; i++) {
+        vec2 h = tunnelMap(ro + rd * t);
+        if (h.x < 0.003) { mat = h.y; break; }
+        t += h.x * 0.9;
+        if (t > 16.0) break;
+    }
+    if (mat < 0.0)
+        return vec3(1.0);   // o ponto de fuga: não bateu em nada
+
+    vec3 hit = ro + rd * t;
+    vec3 n = tunnelNormal(hit);
+
+    // Luz pontual à frente, no ponto de fuga (a "saída" do túnel)
+    vec3 toLight = vec3(0.0, 0.0, ro.z + 12.0) - hit;
+    float lightDist = length(toLight);
+    float diffuse = max(dot(n, toLight / lightDist), 0.0) / (1.0 + 0.15 * lightDist);
+
+    vec3 col;
+    if (mat > 0.5) {
+        // Anel emissivo: cada um de uma cor saturada própria
+        float idx = floor(hit.z / RING_SPACING + 0.5);
+        col = saturated(hash11(idx * 0.37 + 0.5)) * (1.1 + diffuse);
+    } else {
+        // Parede escura com faixas longitudinais e luz difusa do ponto de fuga
+        float stripes = 0.5 + 0.5 * sin(atan(hit.y, hit.x) * 18.0);
+        col = vec3(0.02, 0.03, 0.06) * (0.3 + stripes * 0.3)
+            + vec3(0.10, 0.15, 0.25) * diffuse * 2.0;
+    }
+
+    // Névoa: quanto mais longe, mais o pixel converge para o branco do ponto de fuga
+    return mix(col, vec3(1.0), 1.0 - exp(-t * 0.10));
+}
+
+// ==================================================================================
+
 void main()
 {
     if (uFracture <= 0.0) {
@@ -72,40 +148,20 @@ void main()
     // Coordenadas centradas com a proporção corrigida
     vec2 p = (vUV - 0.5) * vec2(aspect, 1.0);
     float r = length(p);
-    float angle = atan(p.y, p.x) + PI;   // 0 a 2*PI
 
-    // Transição simples e legível, inspirada no "star gate" de 2001:
-    //   a cena torce e é sugada -> um corredor de anéis de luz vem na direção da
-    //   câmera -> clarão -> preto -> as pálpebras abrem na sala de aula.
+    // Transição, inspirada no "star gate" de 2001:
+    //   a cena torce e é sugada -> a câmera viaja por um túnel 3D de anéis de luz
+    //   -> clarão -> preto -> as pálpebras abrem na sala de aula.
 
-    // 1) A cena torce e é puxada para o centro, como se a câmera entrasse no túnel
+    // 1) A cena torce e é puxada para o centro, como se a câmera mergulhasse na
+    //    abertura do túnel (o núcleo do artefato vira o ponto de fuga)
     float twist = 4.0 * f * f * exp(-1.8 * r);
     vec2 warped = rotate(p, twist) * (1.0 - 0.6 * f * exp(-1.2 * r));
     vec3 alien = alienScene(warped / vec2(aspect, 1.0) + 0.5);
 
-    // 2) O corredor de luz: em coordenada logarítmica, os anéis nascem pequenos no
-    //    ponto de fuga e expandem para fora — é isso que dá a sensação de viajar
-    //    para dentro do túnel, porque eles passam "por cima" da câmera.
+    // 2) Viagem pelo túnel 3D: crossfade da cena para o ray marching
     float gate = smoothstep(0.20, 0.55, f);
-    float logr = log(max(r, 0.04));
-
-    // Anéis: cada um nasce no centro e corre para a borda, ganhando velocidade.
-    // Cada anel tem uma cor saturada própria (uma cor por vez, bem legível).
-    float lane = logr * 3.0 - uTime * 2.2;
-    float ringIndex = floor(lane);
-    float d = abs(fract(lane) - 0.5);
-    float ring = 1.0 - smoothstep(0.0, 0.12, d);
-    vec3 ringColor = saturated(hash11(ringIndex * 0.37 + 0.5));
-
-    // Raios radiais finos e quase fixos, como as linhas do corredor
-    float rays = pow(0.5 + 0.5 * sin(angle * 18.0 + uTime * 0.4), 20.0);
-
-    // O túnel é escuro: anéis + raios sobre fundo quase preto, com o núcleo branco
-    vec3 tunnel = ringColor * ring * 1.4 + vec3(0.7, 0.85, 1.0) * rays * 0.5;
-    tunnel += vec3(1.0) * exp(-r * 6.0) * (1.0 + 0.8 * sin(uTime * 3.0));  // ponto de fuga
-    tunnel += ringColor * 0.06;   // leve véu de cor para não ficar preto puro
-
-    // A cena escurece enquanto o túnel toma conta — sem fragmentos, só um crossfade
+    vec3 tunnel = tunnelColor(p, f);
     vec3 color = mix(alien * (1.0 - 0.7 * gate), tunnel, gate);
 
     // 3) Clarão e corte para preto: o ponto de fuga engole a tela e tudo apaga
