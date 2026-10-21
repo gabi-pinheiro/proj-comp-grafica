@@ -85,7 +85,11 @@ static void keyCallback(GLFWwindow* window, int key, int, int action, int)
     switch (key) {
     case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(window, true); break;
     case GLFW_KEY_SPACE: animationPaused = !animationPaused; break;
-    case GLFW_KEY_A: autoOrbit = !autoOrbit; break;
+    case GLFW_KEY_A:
+        // Durante a narrativa a câmera é da linha do tempo
+        if (!storyPlaying)
+            autoOrbit = !autoOrbit;
+        break;
     case GLFW_KEY_R: camera = OrbitCamera(); break;
     case GLFW_KEY_F5: reloadRequested = true; break;
     case GLFW_KEY_B: bloomEnabled = !bloomEnabled; break;
@@ -349,7 +353,7 @@ int main()
             animationTime += deltaTime * story.animationSpeed;
 
         // Transição das partículas (2 segundos) entre o núcleo (0) e as órbitas (1)
-        float spreadSpeed = deltaTime / 2.0f;
+        float spreadSpeed = animationPaused ? 0.0f : deltaTime / 2.0f;
         particleSpread += particlesEnabled ? spreadSpeed : -spreadSpeed;
         particleSpread = glm::clamp(particleSpread, 0.0f, 1.0f);
         if (autoOrbit && !storyPlaying)
