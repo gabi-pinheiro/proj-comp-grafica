@@ -23,8 +23,9 @@ StoryFrame evaluateStory(float t)
     // intervalo das etapas 1 a 3, para o movimento não parar na troca de etapa.
     // Na fratura ela avança para dentro do artefato.
     float dolly = stageProgress(t, 0.0f, STORY_AWAKENING_END);
-    // Na fratura a câmera é "puxada aos solavancos" para dentro do artefato
-    frame.distance = glm::mix(22.0f, 5.5f, dolly) - 2.5f * fracture - 0.4f * fracture * pow(abs(std::sin(t * 2.3f)), 4.0f);
+    // Na fratura a câmera é "puxada aos solavancos" e engolida pelo artefato
+    // (distância chega a ~0.4, dentro da casca) antes de virar o túnel
+    frame.distance = glm::mix(22.0f, 5.5f, dolly) - 5.1f * fracture - 0.4f * fracture * pow(abs(std::sin(t * 2.3f)), 4.0f);
     frame.pitch = glm::mix(0.35f, 0.03f, dolly);
     frame.yaw = 0.7f * (1.0f - approach) + 0.3f * encounter + 1.4f * awakening + 0.6f * fracture;
 

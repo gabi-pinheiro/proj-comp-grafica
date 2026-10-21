@@ -61,19 +61,28 @@ vec3 classroom(vec2 uv, float aspect, float blur)
 // ================= Túnel 3D (ray marching, a mesma técnica da escultura) =================
 
 const float TUNNEL_R = 1.0;       // raio do corredor
-const float RING_SPACING = 1.8;   // distância entre os anéis
-const float RING_SIZE = 0.08;     // espessura do torus de cada anel
+const float RING_SPACING = 2.2;   // distância entre os anéis
+const float RING_SIZE = 0.07;     // espessura do torus de cada anel
+const float RING_SPEED = 4.0;     // velocidade com que os anéis vêm na direção da câmera
 
-// SDF do túnel: parede interna do cilindro + anéis torus repetidos ao longo de z
-// com mod (repetição, como os cortes do anel externo da escultura).
+// SDF do túnel: parede interna do cilindro (parada, serve de referência de fundo)
+// + aros torus flutuando no meio do corredor, vindo na direção da câmera.
 // Retorna (distância, material: 0 = parede, 1 = anel).
 vec2 tunnelMap(vec3 p)
 {
     // Estamos dentro do cilindro: a distância até a parede é R - len(p.xy)
     float wall = TUNNEL_R - length(p.xy);
-    // Um torus encostado na parede a cada RING_SPACING em z
-    float pz = mod(p.z, RING_SPACING) - 0.5 * RING_SPACING;
-    float ring = length(vec2(length(p.xy) - (TUNNEL_R + 0.01), pz)) - RING_SIZE;
+
+    // Os aros se movem em -z: cada um nasce longe, cresce até engolir a tela e
+    // passa pela câmera. O espaçamento varia um pouco por aro (hash), para o
+    // padrão não parecer periódico/parado.
+    float pz = p.z + uTime * RING_SPEED;
+    float idx = floor(pz / RING_SPACING);
+    float center = (idx + 0.5) * RING_SPACING + (hash11(idx * 0.61) - 0.5) * 0.8;
+    float local = pz - center;
+    // Aro no meio do corredor (não colado na parede), com raio variando por aro
+    float ringRadius = 0.55 + 0.20 * hash11(idx * 0.83);
+    float ring = length(vec2(length(p.xy) - ringRadius, local)) - RING_SIZE;
     return ring < wall ? vec2(ring, 1.0) : vec2(wall, 0.0);
 }
 
@@ -91,8 +100,8 @@ vec3 tunnelNormal(vec3 p)
 // um anel atrás do outro — é o movimento de câmera que dá a sensação de viagem.
 vec3 tunnelColor(vec2 p, float f)
 {
-    // Posição da câmera dentro do corredor, com um leve balanço
-    vec3 ro = vec3(0.06 * sin(uTime * 0.7), 0.06 * sin(uTime * 0.9 + 1.0), uTime * 3.0);
+    // A câmera balança devagar; quem se move são os aros, vindo na direção dela
+    vec3 ro = vec3(0.06 * sin(uTime * 0.7), 0.06 * sin(uTime * 0.9 + 1.0), 0.0);
     // Direção do raio por pixel: perspectiva real, com uma leve guinada da câmera
     vec3 rd = normalize(vec3(p, 1.6));
     rd.xy = rotate(rd.xy, 0.03 * sin(uTime * 0.5));
@@ -118,8 +127,8 @@ vec3 tunnelColor(vec2 p, float f)
 
     vec3 col;
     if (mat > 0.5) {
-        // Anel emissivo: cada um de uma cor saturada própria
-        float idx = floor(hit.z / RING_SPACING + 0.5);
+        // Aro emissivo: cada um de uma cor saturada própria
+        float idx = floor((hit.z + uTime * RING_SPEED) / RING_SPACING);
         col = saturated(hash11(idx * 0.37 + 0.5)) * (1.1 + diffuse);
     } else {
         // Parede escura com faixas longitudinais e luz difusa do ponto de fuga
