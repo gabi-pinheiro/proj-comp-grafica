@@ -181,7 +181,7 @@ A narrativa começa sozinha ao abrir o programa. Ela é controlada por uma linha
 | 0–12 s | A aproximação | Câmera distante e alta, que se aproxima devagar; artefato quase parado e com o núcleo fraco |
 | 12–24 s | O encontro | A câmera chega mais perto, o artefato começa a girar e a luz do núcleo aumenta |
 | 24–38 s | O despertar | Rotação acelera, as partículas saem do núcleo, bloom e god rays aumentam e a câmera contorna o artefato com um leve tremor |
-| 38–54 s | The Fracture | A câmera é puxada aos solavancos para dentro do artefato: tentáculos saem das bordas da tela, a imagem vira um túnel psicodélico e a tela apaga para preto |
+| 38–54 s | The Fracture | A câmera é puxada para dentro do artefato: a imagem torce, vira um corredor de anéis de luz correndo na direção da câmera e a tela apaga para preto |
 | 54–62 s | O despertar na EACH-USP | As "pálpebras" abrem devagar sobre a foto, que entra em foco; a "cabeça" olha para um lado, para o outro e volta ao centro |
 | 62–64 s | Fim | Corte para preto; a narrativa fica parada aí até `N` ou `M` |
 
@@ -189,12 +189,10 @@ Os tempos ficam em constantes no começo de `src/story.h` (`STORY_APPROACH_END`,
 
 A transição fica no passe final, `composite.frag`, e recebe o progresso `uFracture` (0 a 1). Ela segue uma progressão única, inspirada na "Jornada Além do Infinito" de *2001*:
 
-1. **Tentáculos** (`tendrils`): 6 braços sinuosos que nascem nas bordas da tela em momentos diferentes e se esticam até o centro, como se o artefato puxasse a câmera. Cada um é uma linha angular que ondula com o raio e o tempo, grossa na base e fina na ponta; onde o corpo cobre a imagem, as coordenadas de amostragem são ainda mais puxadas para dentro ("sucção").
-2. **Túnel psicodélico**: em coordenada logarítmica (`log(r)`), raios em espiral e anéis correm para o centro sem fim. A cor vem de uma paleta arco-íris (`0.5 + 0.5·cos`) que circula com o tempo, e o ponto de fuga é um núcleo branco pulsante. No começo o túnel só tinge a cena com franjas de cor; depois domina a tela.
-3. **Corte para preto**: no fim, um último clarão do núcleo e o túnel apaga para preto — um instante de escuridão antes de acordar.
-4. **Acordar na sala**: a "acordada" começa com as pálpebras fechadas (borda curva que tampa a foto) e elas abrem devagar, tremendo uma vez, enquanto a foto sai do desfoque (mipmaps via `textureLod`).
-
-O "olhar para os lados" usa um parallax falso sobre a foto plana: um **keystone** (ao virar a "cabeça", um lado comprime e o outro estica, como se o plano girasse em perspectiva) combinado com um **deslocamento por profundidade** (a parte de baixo — carteiras, perto — se move mais que a de cima — parede e lousa, longe). A foto é mostrada com um zoom fixo maior que 1, o que deixa uma margem lateral para o movimento sem revelar a borda da imagem.
+1. **Distorção de entrada**: as coordenadas de amostragem da cena são torcidas e puxadas para o centro, como se a câmera mergulhasse na abertura do túnel.
+2. **Corredor de luz**: em coordenada logarítmica (`log(r)`), anéis de luz nascem pequenos no ponto de fuga e expandem para fora, passando "por cima" da câmera — é isso que dá a sensação de viajar para dentro do túnel. Cada anel tem uma cor saturada própria (`hash` do índice do anel), como os campos de cor de *2001*, e raios radiais finos completam o corredor sobre um fundo escuro.
+3. **Clarão e corte para preto**: no fim, o ponto de fuga engole a tela num clarão e tudo apaga — um instante de escuridão antes de acordar.
+4. **Acordar na sala**: a "acordada" começa com as pálpebras fechadas (borda curva que tampa a foto) e elas abrem devagar, tremendo uma vez, enquanto a foto sai do desfoque (mipmaps via `textureLod`). Depois a "cabeça" olha para um lado, para o outro e volta ao centro — um deslocamento simples da amostragem, possível porque a foto é mostrada com zoom um pouco maior que 1 e sobra margem lateral.
 
 Os padrões usam coordenadas com a proporção da tela corrigida, então não esticam. A foto é desenhada no modo "cover": preenche a tela sem deformar e o que sobra é cortado. O desfoque do "despertar" usa os mipmaps da textura (`textureLod`), e a piscada é uma borda curva que fecha e abre a imagem.
 
@@ -227,7 +225,7 @@ A foto é lida de **`assets/sala-each.jpg`** (JPG ou PNG, qualquer resolução; 
 - [x] Luz colorida do núcleo bloqueada pela casca da escultura
 - [x] Renderização HDR com bloom e god rays
 - [x] Partículas orbitais com instancing e blending aditivo
-- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica, túnel psicodélico com tentáculos e "acordar" na sala com parallax
+- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica, corredor de luz estilo 2001 e "acordar" na sala de aula
 
 ## Melhorias planejadas
 

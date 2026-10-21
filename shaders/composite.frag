@@ -19,7 +19,6 @@ uniform float uBlack;             // 1 = corte para preto
 #include "common.glsl"
 
 const float PI = 3.14159265;
-const int TENTACLES = 6;
 
 float hash11(float p)
 {
@@ -32,8 +31,8 @@ vec2 rotate(vec2 p, float a)
     return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
 }
 
-// Paleta arco-íris forte, na pegada psicodélica do túnel de "2001"
-vec3 rainbow(float h)
+// Cor saturada, como os campos de cor do corredor de luz de "2001"
+vec3 saturated(float h)
 {
     return 0.5 + 0.5 * cos(2.0 * PI * (h + vec3(0.0, 0.33, 0.67)));
 }
@@ -47,9 +46,8 @@ vec3 alienScene(vec2 uv)
     return toneMap(color);
 }
 
-// Foto da sala preenchendo a tela sem deformar. "cover" corta o que sobra; usando
-// um pouco mais de zoom (cover * ~1.1), sobra uma margem lateral para a câmera
-// "olhar para os lados" (pan) sem mostrar a borda da imagem.
+// Foto da sala preenchendo a tela sem deformar ("cover"): o que sobra é cortado.
+// O desfoque usa os mipmaps da textura.
 vec3 classroom(vec2 uv, float aspect, float blur)
 {
     vec2 scale = vec2(1.0);
@@ -58,41 +56,6 @@ vec3 classroom(vec2 uv, float aspect, float blur)
     else
         scale.x = aspect / uClassroomAspect;
     return textureLod(uClassroom, (uv - 0.5) * scale + 0.5, blur).rgb;
-}
-
-// Tentáculos do artefato: braços sinuosos que nascem nas bordas da tela e se
-// esticam em direção ao centro, puxando a câmera. rgb = brilho da borda, a = corpo
-vec4 tendrils(float r, float angle, float f)
-{
-    float body = 0.0;
-    vec3 rim = vec3(0.0);
-    for (int i = 0; i < TENTACLES; i++) {
-        float fi = float(i);
-        float h = hash11(fi * 3.7);
-
-        // Cada tentáculo entra num momento diferente; a ponta avança da borda ao centro
-        float grow = smoothstep(0.10 + 0.30 * h, 0.50 + 0.25 * h, f);
-        if (grow <= 0.0)
-            continue;
-        float tip = mix(2.5, 0.05, grow);
-        if (r < tip)
-            continue;
-
-        // A linha do tentáculo ondula com o raio e o tempo, como um braço vivo
-        float base = fi / float(TENTACLES) * 2.0 * PI + h * 0.9;
-        float wave = 0.30 * sin(r * 4.0 - uTime * 2.5 + h * 6.28)
-                   + 0.12 * sin(r * 9.0 + uTime * 1.6 + h * 4.0);
-        float arc = abs(mod(angle - base - wave + PI, 2.0 * PI) - PI) * r;
-
-        // Grosso na base, afinando até a ponta; a espessura pulsa
-        float w = (0.05 + 0.09 * smoothstep(tip, tip + 0.6, r))
-                * (0.75 + 0.25 * sin(uTime * 2.0 + h * 5.0));
-        float inBody = smoothstep(w, w * 0.35, arc) * smoothstep(tip - 0.02, tip + 0.08, r);
-        float inRim = smoothstep(w * 1.8, w, arc) - inBody;
-        body = max(body, inBody);
-        rim += rainbow(fi / float(TENTACLES) + uTime * 0.05) * max(inRim, 0.0);
-    }
-    return vec4(rim, body);
 }
 
 void main()
@@ -106,73 +69,64 @@ void main()
     float aspect = size.x / size.y;
     float f = uFracture;
 
-    // Coordenadas centradas com a proporção corrigida, para os padrões não esticarem
+    // Coordenadas centradas com a proporção corrigida
     vec2 p = (vUV - 0.5) * vec2(aspect, 1.0);
     float r = length(p);
     float angle = atan(p.y, p.x) + PI;   // 0 a 2*PI
 
-    // Progressão limpa, inspirada na "Jornada Além do Infinito" de 2001:
-    //   distorção -> tentáculos puxando -> túnel de luz -> preto -> acordar na sala
+    // Transição simples e legível, inspirada no "star gate" de 2001:
+    //   a cena torce e é sugada -> um corredor de anéis de luz vem na direção da
+    //   câmera -> clarão -> preto -> as pálpebras abrem na sala de aula.
 
-    // 1) Tentáculos: calculados primeiro porque eles agarram a imagem e a puxam
-    vec4 tent = tendrils(r, angle, f);
-    float tentFade = smoothstep(0.15, 0.40, f) * (1.0 - smoothstep(0.70, 0.90, f));
-
-    // 2) Distorção radial: torção e puxão para o centro; os tentáculos "chupam" a imagem
+    // 1) A cena torce e é puxada para o centro, como se a câmera entrasse no túnel
     float twist = 4.0 * f * f * exp(-1.8 * r);
     vec2 warped = rotate(p, twist) * (1.0 - 0.6 * f * exp(-1.2 * r));
-    warped *= 1.0 - 0.07 * tent.a * tentFade;
-
     vec3 alien = alienScene(warped / vec2(aspect, 1.0) + 0.5);
 
-    // 3) Túnel psicodélico: em coordenada logarítmica (log(r)), raios em espiral e
-    //    anéis correm para o centro sem fim, com paleta arco-íris circulando e um
-    //    núcleo branco pulsante no ponto de fuga.
-    float gate = smoothstep(0.20, 0.50, f);
-    float logr = log(max(r, 0.03));
-    float rays = pow(0.5 + 0.5 * sin(angle * 12.0 + logr * 9.0 - uTime * 3.0), 5.0);
-    float bands = fract(logr * 4.0 - uTime * 2.0);
-    float rings = smoothstep(0.80, 1.0, bands);
-    float hue = fract(logr * 0.4 + angle / (2.0 * PI) * 3.0 - uTime * 0.12 + rays * 0.4);
-    vec3 cosmic = rainbow(hue) * (rays * 1.6 + rings * 0.7);
-    cosmic += vec3(1.0) * exp(-r * 7.0) * (1.5 + 1.5 * sin(uTime * 3.0));  // ponto de fuga
+    // 2) O corredor de luz: em coordenada logarítmica, os anéis nascem pequenos no
+    //    ponto de fuga e expandem para fora — é isso que dá a sensação de viajar
+    //    para dentro do túnel, porque eles passam "por cima" da câmera.
+    float gate = smoothstep(0.20, 0.55, f);
+    float logr = log(max(r, 0.04));
 
-    // No começo o túnel só "contamina" a cena com franjas de cor; depois domina a tela
-    alien += rainbow(hue) * rays * smoothstep(0.05, 0.3, f) * 0.9 * (1.0 - gate);
-    vec3 color = mix(alien, cosmic, gate);
+    // Anéis: cada um nasce no centro e corre para a borda, ganhando velocidade.
+    // Cada anel tem uma cor saturada própria (uma cor por vez, bem legível).
+    float lane = logr * 3.0 - uTime * 2.2;
+    float ringIndex = floor(lane);
+    float d = abs(fract(lane) - 0.5);
+    float ring = 1.0 - smoothstep(0.0, 0.12, d);
+    vec3 ringColor = saturated(hash11(ringIndex * 0.37 + 0.5));
 
-    // 4) Tentáculos por cima de tudo, soltando a imagem antes do fim
-    color = mix(color, vec3(0.03, 0.01, 0.07), tent.a * 0.9 * tentFade);
-    color += tent.rgb * 0.8 * tentFade;
+    // Raios radiais finos e quase fixos, como as linhas do corredor
+    float rays = pow(0.5 + 0.5 * sin(angle * 18.0 + uTime * 0.4), 20.0);
 
-    // 5) Corte para preto: o túnel colapsa e a tela apaga antes de acordar na sala.
-    //    Um último clarão do núcleo antecede o apagão.
+    // O túnel é escuro: anéis + raios sobre fundo quase preto, com o núcleo branco
+    vec3 tunnel = ringColor * ring * 1.4 + vec3(0.7, 0.85, 1.0) * rays * 0.5;
+    tunnel += vec3(1.0) * exp(-r * 6.0) * (1.0 + 0.8 * sin(uTime * 3.0));  // ponto de fuga
+    tunnel += ringColor * 0.06;   // leve véu de cor para não ficar preto puro
+
+    // A cena escurece enquanto o túnel toma conta — sem fragmentos, só um crossfade
+    vec3 color = mix(alien * (1.0 - 0.7 * gate), tunnel, gate);
+
+    // 3) Clarão e corte para preto: o ponto de fuga engole a tela e tudo apaga
     float blackout = smoothstep(0.82, 0.97, f);
-    color += vec3(1.0) * exp(-r * 4.0) * 2.0 * smoothstep(0.78, 0.88, f) * (1.0 - blackout);
+    color += vec3(1.0) * exp(-r * 3.5) * 3.0 * smoothstep(0.75, 0.90, f) * (1.0 - blackout);
     color *= 1.0 - blackout;
 
-    // 6) Acordar na sala de aula: as pálpebras abrem devagar sobre a foto (que já
+    // 4) Acordar na sala de aula: as pálpebras abrem devagar sobre a foto (que já
     //    começa preta atrás delas), a imagem entra em foco e a "cabeça" olha para
     //    os lados — para a esquerda, para a direita, e volta ao centro.
     if (uClassroomTime >= 0.0) {
         float t = uClassroomTime;
         float blur = 4.0 * (1.0 - smoothstep(0.5, 3.5, t));
 
-        // Olhar para os lados com parallax falso (a foto é plana, mas dois truques
-        // dão sensação de profundidade):
-        //  - keystone: ao virar a "cabeça", um lado da foto comprime e o outro
-        //    estica, como se o plano da sala girasse em perspectiva;
-        //  - a parte de baixo (carteiras, perto) se desloca mais que a de cima
-        //    (parede e lousa, longe), como num parallax de verdade.
-        //    O zoom fixo > 1 deixa uma margem lateral para o pan sem mostrar a borda.
+        // Olhar para os lados: a foto tem margem lateral sobrando (zoom > 1),
+        // então dá para virar a "cabeça" sem mostrar a borda da imagem
         float leftLook = smoothstep(2.5, 4.5, t) * (1.0 - smoothstep(5.0, 6.5, t));
         float rightLook = smoothstep(6.5, 8.5, t) * (1.0 - smoothstep(9.5, 11.0, t));
         float pan = 0.04 * (rightLook - leftLook);
-        float zoom = 1.12 - 0.02 * smoothstep(0.0, 6.0, t);
-        vec2 cuv = vUV;
-        cuv.x = 0.5 + (cuv.x - 0.5) / (1.0 - pan * 3.0);   // keystone
-        cuv.x += pan * 0.5 * (1.0 - vUV.y);              // perto desloca mais
-        vec3 room = classroom((cuv - 0.5) * zoom + 0.5 + vec2(pan, 0.0), aspect, blur);
+        float zoom = 1.10 - 0.02 * smoothstep(0.0, 6.0, t);
+        vec3 room = classroom((vUV - 0.5) * zoom + 0.5 + vec2(pan, 0.0), aspect, blur);
 
         // Pálpebras: começam fechadas (tela preta) e abrem devagar, com um tremer
         float open = smoothstep(0.8, 3.5, t);
