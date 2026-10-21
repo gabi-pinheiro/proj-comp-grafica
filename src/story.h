@@ -7,9 +7,9 @@
 const float STORY_APPROACH_END = 12.0f;    // 1) a aproximação
 const float STORY_ENCOUNTER_END = 24.0f;   // 2) o encontro
 const float STORY_AWAKENING_END = 38.0f;   // 3) o despertar
-const float STORY_FRACTURE_END = 50.0f;    // 4) a fratura (transição para a sala)
-const float STORY_CUT_TO_BLACK = 58.0f;    // 5) a sala de aula, até o corte para preto
-const float STORY_END = 60.0f;
+const float STORY_FRACTURE_END = 54.0f;    // 4) a fratura (transição para a sala, mais longa e psicodélica)
+const float STORY_CUT_TO_BLACK = 62.0f;    // 5) a sala de aula, até o corte para preto
+const float STORY_END = 64.0f;
 
 // Multiplica a velocidade da narrativa inteira (2.0 = duas vezes mais rápida)
 const float STORY_SPEED = 1.0f;

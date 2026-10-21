@@ -181,18 +181,20 @@ A narrativa começa sozinha ao abrir o programa. Ela é controlada por uma linha
 | 0–12 s | A aproximação | Câmera distante e alta, que se aproxima devagar; artefato quase parado e com o núcleo fraco |
 | 12–24 s | O encontro | A câmera chega mais perto, o artefato começa a girar e a luz do núcleo aumenta |
 | 24–38 s | O despertar | Rotação acelera, as partículas saem do núcleo, bloom e god rays aumentam e a câmera contorna o artefato com um leve tremor |
-| 38–50 s | The Fracture | A câmera avança para o artefato e a imagem se rompe em fragmentos que revelam a sala de aula |
-| 50–58 s | O despertar na EACH-USP | A foto da sala entra em foco, com uma piscada e uma pequena aproximação |
-| 58–60 s | Fim | Corte para preto; a narrativa fica parada aí até `N` ou `M` |
+| 38–54 s | The Fracture | A câmera é puxada aos solavancos para dentro do artefato: tentáculos saem das bordas da tela, a imagem vira um túnel psicodélico e depois se rompe em fragmentos que revelam a sala |
+| 54–62 s | O despertar na EACH-USP | A foto da sala entra em foco, com uma piscada e uma pequena aproximação |
+| 62–64 s | Fim | Corte para preto; a narrativa fica parada aí até `N` ou `M` |
 
 Os tempos ficam em constantes no começo de `src/story.h` (`STORY_APPROACH_END`, `STORY_FRACTURE_END`, ...), e `STORY_SPEED` acelera ou desacelera a narrativa inteira. O tempo da narrativa avança com `deltaTime`, então a duração é a mesma em qualquer taxa de quadros. Cada etapa usa um progresso de 0 a 1 suavizado com `smoothstep`, para os movimentos começarem e terminarem devagar. A aproximação da câmera usa um único intervalo da etapa 1 até a 3, para o movimento não parar nas trocas de etapa.
 
 A transição fica no passe final, `composite.frag`, e recebe o progresso `uFracture` (0 a 1):
 
-1. **Fragmentos**: a tela é dividida em 9 setores polares (o mesmo número de cortes do anel externo da escultura) e cada setor em anéis concêntricos, deslocados por setor. Cada fragmento recebe um valor de hash fixo, calculado a partir da posição dele, então o padrão é estável e não pisca.
-2. **Limiar por fragmento**: cada fragmento se rompe quando `uFracture` passa do seu limiar, que depende da distância ao centro e do hash. O centro se rompe primeiro e a ruptura avança para fora. Como todos os limiares ficam abaixo de 1, no fim não sobra nenhum fragmento.
-3. **Distorção radial**: as coordenadas de amostragem da cena são torcidas e puxadas para o centro, mais forte perto do centro e com mais intensidade conforme o progresso aumenta. Antes de sumir, cada fragmento se solta e se afasta do centro.
-4. **Rachaduras**: as bordas dos fragmentos brilham em ciano/magenta um pouco antes de cada um se romper.
+1. **Tentáculos** (`tendrils`): 6 braços sinuosos que nascem nas bordas da tela em momentos diferentes e se esticam até o centro, como se o artefato puxasse a câmera. Cada um é uma linha angular que ondula com o raio e o tempo, grossa na base e fina na ponta; onde o corpo cobre a imagem, as coordenadas de amostragem são ainda mais puxadas para dentro ("sucção").
+2. **Túnel psicodélico**: em coordenada logarítmica (`log(r)`), raios em espiral e anéis correm para o centro sem fim — a viagem "além do infinito" de *2001*. A cor vem de uma paleta arco-íris (`0.5 + 0.5·cos`) que circula com o tempo, e o ponto de fuga é um núcleo branco pulsante. No começo o túnel só tinge a cena com franjas de cor; depois domina a tela.
+3. **Fragmentos**: a tela é dividida em 9 setores polares (o mesmo número de cortes do anel externo da escultura) e cada setor em anéis concêntricos, deslocados por setor. Cada fragmento recebe um valor de hash fixo, calculado a partir da posição dele, então o padrão é estável e não pisca.
+4. **Limiar por fragmento**: cada fragmento se rompe quando `uFracture` passa do seu limiar, que depende da distância ao centro e do hash. O centro se rompe primeiro e a ruptura avança para fora. Como todos os limiares ficam abaixo de 1, no fim não sobra nenhum fragmento.
+5. **Distorção radial**: as coordenadas de amostragem da cena são torcidas e puxadas para o centro, mais forte perto do centro e com mais intensidade conforme o progresso aumenta. Antes de sumir, cada fragmento se solta e se afasta do centro.
+6. **Rachaduras**: as bordas dos fragmentos brilham em ciano/magenta um pouco antes de cada um se romper.
 
 Os padrões usam coordenadas com a proporção da tela corrigida, então não esticam. A foto é desenhada no modo "cover": preenche a tela sem deformar e o que sobra é cortado. O desfoque do "despertar" usa os mipmaps da textura (`textureLod`), e a piscada é uma borda curva que fecha e abre a imagem.
 
@@ -225,7 +227,7 @@ A foto é lida de **`assets/sala-each.jpg`** (JPG ou PNG, qualquer resolução; 
 - [x] Luz colorida do núcleo bloqueada pela casca da escultura
 - [x] Renderização HDR com bloom e god rays
 - [x] Partículas orbitais com instancing e blending aditivo
-- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica e transição procedural para uma foto
+- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica, túnel psicodélico com tentáculos e transição procedural para uma foto
 
 ## Melhorias planejadas
 
