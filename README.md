@@ -10,6 +10,8 @@ Uma cena 3D de ficção científica: um planeta alienígena escuro, com um gigan
 |---|---|
 | ![](docs/screenshots/sem-bloom-godrays.png) | ![](docs/screenshots/vista-estrela.png) |
 
+Ao abrir, o programa reproduz uma pequena narrativa de cerca de 60 segundos: a câmera se aproxima do artefato, ele desperta, a realidade se fratura e a cena termina numa sala de aula da EACH-USP (veja [Narrativa](#narrativa-the-fracture)).
+
 ## Tecnologias
 
 - **C++17** para a aplicação
@@ -73,7 +75,11 @@ Os mesmos comandos do Linux funcionam com as Xcode Command Line Tools e o CMake 
 | `B` | Liga/desliga o bloom |
 | `G` | Liga/desliga os god rays |
 | `P` | Liga/desliga as partículas (elas voltam para o núcleo ou saem dele) |
+| `N` | Reinicia a narrativa |
+| `M` | Sai da narrativa e vai para o modo livre |
 | `Esc` | Fecha o programa |
+
+Durante a narrativa a câmera é controlada pela linha do tempo, então o mouse, a roda e a tecla `A` só funcionam no modo livre (`M`). As outras teclas continuam funcionando, e `Espaço` também pausa a narrativa.
 
 ## Estrutura do projeto
 
@@ -83,6 +89,8 @@ src/
   shader.cpp/.h     carregamento e compilação dos shaders (com #include e proteção contra ciclos)
   geometry.cpp/.h   malhas do terreno e das rochas
   framebuffer.cpp/.h  framebuffers do shadow map e do pós-processamento
+  story.cpp/.h      linha do tempo da narrativa (câmera, velocidade e efeitos de cada etapa)
+  texture.cpp/.h    carregamento da foto da sala de aula como textura
 shaders/
   common.glsl         uniforms, paleta, céu, neblina e tone mapping compartilhados
   sculpture_sdf.glsl  SDFs da escultura e sombra suave
@@ -94,9 +102,11 @@ shaders/
   bright.frag         separa as partes mais brilhantes da cena
   blur.frag           desfoque gaussiano separável do bloom
   godrays.frag        god rays em espaço de tela
-  composite.frag      junta cena, bloom e god rays e aplica o tone mapping
+  composite.frag      junta cena, bloom e god rays, aplica o tone mapping e faz a transição "The Fracture"
   fullscreen.vert     triângulo de tela cheia usado pelo céu, escultura e pós-processamento
 external/glad/        loader do OpenGL gerado pelo GLAD
+external/stb/         stb_image.h, para ler a foto (JPG/PNG)
+assets/               foto da sala de aula (sala-each.jpg)
 docs/screenshots/     capturas da aplicação
 ```
 
@@ -162,6 +172,34 @@ Em `particles.vert`, 800 partículas são desenhadas com uma única chamada `glD
 - **Transparência e blending**: cada partícula é um quadrado virado para a câmera (*billboard*) com brilho gaussiano, somado à cena com blending aditivo (`glBlendFunc(GL_ONE, GL_ONE)`). Como as partículas são brilhantes, elas também alimentam o bloom.
 - **Ligar e desligar (`P`)**: um valor `uSpread` vai de 0 a 1 em 2 segundos (usando `deltaTime`). Cada partícula tem um atraso aleatório e uma curva suave (`smoothstep`), e enquanto está perto do núcleo dá voltas extras, então o conjunto sai do núcleo em espiral, ou volta para ele, ficando mais brilhante e menor até sumir.
 
+### Narrativa: The Fracture
+
+A narrativa começa sozinha ao abrir o programa. Ela é controlada por uma linha do tempo centralizada em `src/story.cpp`: a função `evaluateStory(t)` recebe o tempo da narrativa e devolve um `StoryFrame` com a posição da câmera, a velocidade das animações, a intensidade da luz do núcleo, o reforço do bloom, se as partículas estão ligadas e o progresso da transição. O laço principal só aplica esses valores, então não há condições de tempo espalhadas pelo código.
+
+| Tempo | Etapa | O que acontece |
+|---|---|---|
+| 0–12 s | A aproximação | Câmera distante e alta, que se aproxima devagar; artefato quase parado e com o núcleo fraco |
+| 12–24 s | O encontro | A câmera chega mais perto, o artefato começa a girar e a luz do núcleo aumenta |
+| 24–38 s | O despertar | Rotação acelera, as partículas saem do núcleo, bloom e god rays aumentam e a câmera contorna o artefato com um leve tremor |
+| 38–50 s | The Fracture | A câmera avança para o artefato e a imagem se rompe em fragmentos que revelam a sala de aula |
+| 50–58 s | O despertar na EACH-USP | A foto da sala entra em foco, com uma piscada e uma pequena aproximação |
+| 58–60 s | Fim | Corte para preto; a narrativa fica parada aí até `N` ou `M` |
+
+Os tempos ficam em constantes no começo de `src/story.h` (`STORY_APPROACH_END`, `STORY_FRACTURE_END`, ...), e `STORY_SPEED` acelera ou desacelera a narrativa inteira. O tempo da narrativa avança com `deltaTime`, então a duração é a mesma em qualquer taxa de quadros. Cada etapa usa um progresso de 0 a 1 suavizado com `smoothstep`, para os movimentos começarem e terminarem devagar. A aproximação da câmera usa um único intervalo da etapa 1 até a 3, para o movimento não parar nas trocas de etapa.
+
+A transição fica no passe final, `composite.frag`, e recebe o progresso `uFracture` (0 a 1):
+
+1. **Fragmentos**: a tela é dividida em 9 setores polares (o mesmo número de cortes do anel externo da escultura) e cada setor em anéis concêntricos, deslocados por setor. Cada fragmento recebe um valor de hash fixo, calculado a partir da posição dele, então o padrão é estável e não pisca.
+2. **Limiar por fragmento**: cada fragmento se rompe quando `uFracture` passa do seu limiar, que depende da distância ao centro e do hash. O centro se rompe primeiro e a ruptura avança para fora. Como todos os limiares ficam abaixo de 1, no fim não sobra nenhum fragmento.
+3. **Distorção radial**: as coordenadas de amostragem da cena são torcidas e puxadas para o centro, mais forte perto do centro e com mais intensidade conforme o progresso aumenta. Antes de sumir, cada fragmento se solta e se afasta do centro.
+4. **Rachaduras**: as bordas dos fragmentos brilham em ciano/magenta um pouco antes de cada um se romper.
+
+Os padrões usam coordenadas com a proporção da tela corrigida, então não esticam. A foto é desenhada no modo "cover": preenche a tela sem deformar e o que sobra é cortado. O desfoque do "despertar" usa os mipmaps da textura (`textureLod`), e a piscada é uma borda curva que fecha e abre a imagem.
+
+#### A foto da sala de aula
+
+A foto é lida de **`assets/sala-each.jpg`** (JPG ou PNG, qualquer resolução; de preferência paisagem 16:9 ou 3:2). Para usar outro nome ou formato, mude a constante `CLASSROOM_IMAGE` em `src/main.cpp`. A imagem é carregada do disco ao abrir o programa, sem acesso à internet, com a biblioteca de um único arquivo [stb_image](https://github.com/nothings/stb) (`external/stb/stb_image.h`, domínio público). Se o arquivo não existir, o programa avisa no terminal e mostra uma tela cinza no lugar da foto.
+
 ### Detalhes de robustez
 
 - A câmera não desce abaixo do terreno: a altura dela é limitada por `terrainHeight()` no ponto onde ela está.
@@ -187,6 +225,7 @@ Em `particles.vert`, 800 partículas são desenhadas com uma única chamada `glD
 - [x] Luz colorida do núcleo bloqueada pela casca da escultura
 - [x] Renderização HDR com bloom e god rays
 - [x] Partículas orbitais com instancing e blending aditivo
+- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica e transição procedural para uma foto
 
 ## Melhorias planejadas
 

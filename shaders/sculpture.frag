@@ -49,10 +49,10 @@ vec3 shade(vec3 p, vec3 rd, float material)
     if (material == MAT_CORE) {
         vec3 c = p - artifactCenter();
         float veins = 0.5 + 0.5 * sin(12.0 * c.x + 9.0 * c.y - 7.0 * c.z + uTime * 2.0);
-        return mix(CYAN, MAGENTA, 0.6 * veins + 0.4 * fresnel) * (0.7 + 0.9 * corePulse());
+        return mix(CYAN, MAGENTA, 0.6 * veins + 0.4 * fresnel) * (0.7 + 0.9 * corePulse()) * uCoreGlow;
     }
     if (material == MAT_GEM)
-        return MAGENTA * (2.0 + corePulse()) + vec3(fresnel);
+        return MAGENTA * (2.0 + corePulse()) * uCoreGlow + vec3(fresnel);
 
     float diffuse = max(dot(n, uLightDir), 0.0);
     float shadow = diffuse > 0.0 ? sculptureShadow(p + n * 0.01, uLightDir) : 0.0;

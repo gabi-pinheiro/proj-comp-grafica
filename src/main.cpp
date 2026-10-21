@@ -13,6 +13,8 @@
 #include "framebuffer.h"
 #include "geometry.h"
 #include "shader.h"
+#include "story.h"
+#include "texture.h"
 
 struct OrbitCamera {
     glm::vec3 target = glm::vec3(0.0f, 2.4f, 0.0f);
@@ -59,6 +61,9 @@ const int SHADOW_MAP_SIZE = 2048;
 const int PARTICLE_COUNT = 800;
 const int BLUR_ITERATIONS = 3;
 
+// Foto revelada no fim da narrativa (pasta assets/ do projeto)
+const char* CLASSROOM_IMAGE = "sala-each.jpg";
+
 static OrbitCamera camera;
 static bool isDragging = false;
 static double lastMouseX = 0.0, lastMouseY = 0.0;
@@ -68,6 +73,9 @@ static bool reloadRequested = false;
 static bool bloomEnabled = true;
 static bool godRaysEnabled = true;
 static bool particlesEnabled = true;
+// A narrativa começa sozinha; durante ela a câmera é controlada pela linha do tempo
+static bool storyPlaying = true;
+static bool storyRestartRequested = false;
 
 static void keyCallback(GLFWwindow* window, int key, int, int action, int)
 {
@@ -83,6 +91,13 @@ static void keyCallback(GLFWwindow* window, int key, int, int action, int)
     case GLFW_KEY_B: bloomEnabled = !bloomEnabled; break;
     case GLFW_KEY_G: godRaysEnabled = !godRaysEnabled; break;
     case GLFW_KEY_P: particlesEnabled = !particlesEnabled; break;
+    case GLFW_KEY_N: storyRestartRequested = true; break;
+    case GLFW_KEY_M:
+        // Sai da narrativa e volta para a exploração livre
+        storyPlaying = false;
+        particlesEnabled = true;
+        camera = OrbitCamera();
+        break;
     }
 }
 
@@ -96,7 +111,7 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int)
 
 static void cursorPosCallback(GLFWwindow*, double x, double y)
 {
-    if (!isDragging)
+    if (!isDragging || storyPlaying)
         return;
 
     camera.yaw -= (float)(x - lastMouseX) * 0.005f;
@@ -108,6 +123,8 @@ static void cursorPosCallback(GLFWwindow*, double x, double y)
 
 static void scrollCallback(GLFWwindow*, double, double offsetY)
 {
+    if (storyPlaying)
+        return;
     camera.distance = glm::clamp(camera.distance - (float)offsetY * 0.5f, 4.0f, 25.0f);
 }
 
@@ -270,6 +287,10 @@ int main()
     if (!loadPrograms(programs))
         return 1;
 
+    float classroomAspect;
+    GLuint classroomTexture = loadTexture(std::string(ASSET_DIR) + CLASSROOM_IMAGE, classroomAspect);
+    std::cout << "Narrativa: N reinicia, M sai para o modo livre\n";
+
     Mesh terrain = createTerrainMesh(200.0f, 220);
     std::vector<Mesh> rockMeshes = { createRockMesh(1), createRockMesh(2), createRockMesh(3) };
     std::vector<SceneObject> rocks = createRocks(rockMeshes);
@@ -292,7 +313,8 @@ int main()
 
     PostTargets post;
     float animationTime = 0.0f;
-    float particleSpread = 1.0f;
+    float particleSpread = 0.0f;
+    float storyTime = 0.0f;
     double lastFrameTime = glfwGetTime();
     double fpsTimer = lastFrameTime;
     int frameCount = 0;
@@ -302,14 +324,35 @@ int main()
         float deltaTime = (float)(now - lastFrameTime);
         lastFrameTime = now;
 
+        if (storyRestartRequested) {
+            storyRestartRequested = false;
+            storyPlaying = true;
+            storyTime = 0.0f;
+            animationTime = 0.0f;
+            particleSpread = 0.0f;
+        }
+
+        // Narrativa: a linha do tempo define a câmera, a velocidade das animações e os efeitos.
+        // No fim ela fica parada no último estado (tela preta) até N ou M.
+        StoryFrame story;
+        if (storyPlaying) {
+            if (!animationPaused)
+                storyTime = std::min(storyTime + deltaTime * STORY_SPEED, STORY_END);
+            story = evaluateStory(storyTime);
+            camera.yaw = story.yaw;
+            camera.pitch = story.pitch;
+            camera.distance = story.distance;
+            particlesEnabled = story.particles;
+        }
+
         if (!animationPaused)
-            animationTime += deltaTime;
+            animationTime += deltaTime * story.animationSpeed;
 
         // Transição das partículas (2 segundos) entre o núcleo (0) e as órbitas (1)
         float spreadSpeed = deltaTime / 2.0f;
         particleSpread += particlesEnabled ? spreadSpeed : -spreadSpeed;
         particleSpread = glm::clamp(particleSpread, 0.0f, 1.0f);
-        if (autoOrbit)
+        if (autoOrbit && !storyPlaying)
             camera.yaw += deltaTime * 0.08f;
 
         if (reloadRequested) {
@@ -352,7 +395,7 @@ int main()
             glDisable(GL_POLYGON_OFFSET_FILL);
         }
 
-        glm::vec3 cameraPos = camera.position();
+        glm::vec3 cameraPos = camera.position() + story.cameraShake;
         // Mantém a câmera acima do terreno quando ela está baixa e afastada
         cameraPos.y = std::max(cameraPos.y, terrainHeight(cameraPos.x, cameraPos.z) + 0.5f);
         glm::mat4 view = glm::lookAt(cameraPos, camera.target, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -369,6 +412,7 @@ int main()
             setUniform(program, "uViewProj", viewProj);
             setUniform(program, "uInvViewProj", invViewProj);
             setUniform(program, "uResolution", resolution);
+            setUniform(program, "uCoreGlow", story.coreGlow);
         };
 
         // A cena é desenhada em uma textura HDR, que guarda brilhos acima de 1
@@ -470,18 +514,25 @@ int main()
             source = post.blurB.texture;
         }
 
-        // 8) Composição final na tela: cena + bloom + god rays, com tone mapping
+        // 8) Composição final na tela: cena + bloom + god rays, com tone mapping,
+        //    e a transição para a sala de aula no fim da narrativa
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, width, height);
         glUseProgram(programs.composite);
         setUniform(programs.composite, "uScene", 0);
         setUniform(programs.composite, "uBloom", 1);
         setUniform(programs.composite, "uRays", 2);
-        setUniform(programs.composite, "uBloomStrength", bloomEnabled ? 0.8f : 0.0f);
-        setUniform(programs.composite, "uRaysStrength", godRaysEnabled ? 0.6f : 0.0f);
+        setUniform(programs.composite, "uClassroom", 3);
+        setUniform(programs.composite, "uBloomStrength", bloomEnabled ? 0.8f * story.bloomBoost : 0.0f);
+        setUniform(programs.composite, "uRaysStrength", godRaysEnabled ? 0.6f * story.bloomBoost : 0.0f);
+        setUniform(programs.composite, "uClassroomAspect", classroomAspect);
+        setUniform(programs.composite, "uFracture", story.fracture);
+        setUniform(programs.composite, "uClassroomTime", story.classroomTime);
+        setUniform(programs.composite, "uBlack", story.black);
         bindTexture(0, post.scene.texture);
         bindTexture(1, post.blurB.texture);
         bindTexture(2, post.rays.texture);
+        bindTexture(3, classroomTexture);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
@@ -489,8 +540,11 @@ int main()
 
         frameCount++;
         if (now - fpsTimer >= 0.5) {
-            char title[64];
-            std::snprintf(title, sizeof(title), "The Anomaly | %.1f FPS", frameCount / (now - fpsTimer));
+            char title[96];
+            if (storyPlaying)
+                std::snprintf(title, sizeof(title), "The Anomaly | %.1f FPS | narrativa %.0f s", frameCount / (now - fpsTimer), storyTime);
+            else
+                std::snprintf(title, sizeof(title), "The Anomaly | %.1f FPS", frameCount / (now - fpsTimer));
             glfwSetWindowTitle(window, title);
             frameCount = 0;
             fpsTimer = now;
@@ -501,6 +555,7 @@ int main()
     for (Mesh& mesh : rockMeshes)
         deleteMesh(mesh);
     glDeleteVertexArrays(1, &emptyVao);
+    glDeleteTextures(1, &classroomTexture);
     deleteRenderTarget(shadowMap);
     deletePostTargets(post);
     deletePrograms(programs);
