@@ -524,6 +524,7 @@ int main()
         setUniform(programs.composite, "uScene", 0);
         setUniform(programs.composite, "uBloom", 1);
         setUniform(programs.composite, "uRays", 2);
+        setUniform(programs.composite, "uTime", animationTime);
         setUniform(programs.composite, "uClassroom", 3);
         setUniform(programs.composite, "uBloomStrength", bloomEnabled ? 0.8f * story.bloomBoost : 0.0f);
         setUniform(programs.composite, "uRaysStrength", godRaysEnabled ? 0.6f * story.bloomBoost : 0.0f);
