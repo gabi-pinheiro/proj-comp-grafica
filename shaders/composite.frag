@@ -61,9 +61,9 @@ vec3 classroom(vec2 uv, float aspect, float blur)
 // ================= Túnel 3D (ray marching, a mesma técnica da escultura) =================
 
 const float TUNNEL_R = 1.0;       // raio do corredor
-const float RING_SPACING = 2.2;   // distância entre os anéis
+const float RING_SPACING = 3.2;   // distância entre os anéis
 const float RING_SIZE = 0.07;     // espessura do torus de cada anel
-const float RING_SPEED = 4.0;     // velocidade com que os anéis vêm na direção da câmera
+const float RING_SPEED = 0.7;     // velocidade com que os anéis vêm na direção da câmera
 
 // SDF do túnel: parede interna do cilindro (parada, serve de referência de fundo)
 // + aros torus flutuando no meio do corredor, vindo na direção da câmera.
@@ -127,9 +127,10 @@ vec3 tunnelColor(vec2 p, float f)
 
     vec3 col;
     if (mat > 0.5) {
-        // Aro emissivo: cada um de uma cor saturada própria
+        // Aro emissivo: cada um com uma cor própria, suavizada (sem neon)
         float idx = floor((hit.z + uTime * RING_SPEED) / RING_SPACING);
-        col = saturated(hash11(idx * 0.37 + 0.5)) * (1.1 + diffuse);
+        vec3 tint = mix(vec3(0.7), saturated(hash11(idx * 0.37 + 0.5)), 0.55);
+        col = tint * (0.55 + diffuse);
     } else {
         // Parede escura com faixas longitudinais e luz difusa do ponto de fuga
         float stripes = 0.5 + 0.5 * sin(atan(hit.y, hit.x) * 18.0);
