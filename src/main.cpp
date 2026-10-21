@@ -85,16 +85,13 @@ static void keyCallback(GLFWwindow* window, int key, int, int action, int)
     switch (key) {
     case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(window, true); break;
     case GLFW_KEY_SPACE: animationPaused = !animationPaused; break;
-    case GLFW_KEY_A:
-        // Durante a narrativa a câmera é da linha do tempo
-        if (!storyPlaying)
-            autoOrbit = !autoOrbit;
-        break;
-    case GLFW_KEY_R: camera = OrbitCamera(); break;
+    // Durante a narrativa a câmera e as partículas são da linha do tempo
+    case GLFW_KEY_A: if (!storyPlaying) autoOrbit = !autoOrbit; break;
+    case GLFW_KEY_R: if (!storyPlaying) camera = OrbitCamera(); break;
     case GLFW_KEY_F5: reloadRequested = true; break;
     case GLFW_KEY_B: bloomEnabled = !bloomEnabled; break;
     case GLFW_KEY_G: godRaysEnabled = !godRaysEnabled; break;
-    case GLFW_KEY_P: particlesEnabled = !particlesEnabled; break;
+    case GLFW_KEY_P: if (!storyPlaying) particlesEnabled = !particlesEnabled; break;
     case GLFW_KEY_N: storyRestartRequested = true; break;
     case GLFW_KEY_M:
         // Sai da narrativa e volta para a exploração livre
@@ -371,6 +368,7 @@ int main()
         if (width == 0 || height == 0 || glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
             // Janela minimizada: espera um evento em vez de repetir o laço sem parar
             glfwWaitEvents();
+            lastFrameTime = glfwGetTime();   // o tempo minimizado não conta para as animações
             continue;
         }
         if (width != post.scene.width || height != post.scene.height) {

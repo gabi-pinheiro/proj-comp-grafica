@@ -79,7 +79,7 @@ Os mesmos comandos do Linux funcionam com as Xcode Command Line Tools e o CMake 
 | `M` | Sai da narrativa e vai para o modo livre |
 | `Esc` | Fecha o programa |
 
-Durante a narrativa a câmera é controlada pela linha do tempo, então o mouse, a roda e a tecla `A` só funcionam no modo livre (`M`). As outras teclas continuam funcionando, e `Espaço` também pausa a narrativa (incluindo a transição das partículas).
+Durante a narrativa a câmera é controlada pela linha do tempo, então o mouse, a roda e as teclas `A`, `R` e `P` só funcionam no modo livre (`M`). As outras teclas continuam funcionando, e `Espaço` também pausa a narrativa (incluindo a transição das partículas).
 
 ## Estrutura do projeto
 
