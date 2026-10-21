@@ -32,8 +32,12 @@ add_executable(anomaly
     src/shader.cpp
     src/geometry.cpp
     src/framebuffer.cpp
+    src/story.cpp
+    src/texture.cpp
 )
 target_link_libraries(anomaly PRIVATE glad glfw glm::glm)
+# stb_image (carregamento de imagens) é um único header, incluído em external/stb
+target_include_directories(anomaly SYSTEM PRIVATE external/stb)
 
 # No MinGW, embute as bibliotecas de C++ no executável para não depender
 # de DLLs (libstdc++, libgcc) de outra versão que estejam no PATH
@@ -42,4 +46,6 @@ if(MINGW)
 endif()
 
 # Os shaders são lidos direto da pasta do projeto, então podem ser editados sem recompilar
-target_compile_definitions(anomaly PRIVATE SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders/")
+target_compile_definitions(anomaly PRIVATE
+    SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders/"
+    ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/")

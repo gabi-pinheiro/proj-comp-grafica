@@ -3,6 +3,7 @@
 uniform float uTime;
 uniform vec3 uLightDir;   // direção que aponta PARA a estrela principal
 uniform vec3 uCameraPos;
+uniform float uCoreGlow;   // intensidade da luz do artefato (1 = normal), controlada pela narrativa
 
 const vec3 ARTIFACT_CENTER = vec3(0.0, 2.6, 0.0);
 const vec3 SUN_COLOR = vec3(1.0, 0.68, 0.60);
@@ -22,7 +23,7 @@ float corePulse()
 
 vec3 coreColor()
 {
-    return mix(CYAN, MAGENTA, 0.15 + 0.15 * sin(uTime * 0.4));
+    return mix(CYAN, MAGENTA, 0.15 + 0.15 * sin(uTime * 0.4)) * uCoreGlow;
 }
 
 // Luz pontual emitida pelo núcleo do artefato
