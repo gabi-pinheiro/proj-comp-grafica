@@ -133,9 +133,11 @@ vec3 tunnelColor(vec2 p, float f)
         col = tint * (0.55 + diffuse);
     } else {
         // Parede escura com faixas longitudinais e luz difusa do ponto de fuga
+        // Parede clara com faixas longitudinais finas: continua o clarão do
+        // núcleo, e a névoa já converge para branco no ponto de fuga
         float stripes = 0.5 + 0.5 * sin(atan(hit.y, hit.x) * 18.0);
-        col = vec3(0.02, 0.03, 0.06) * (0.3 + stripes * 0.3)
-            + vec3(0.10, 0.15, 0.25) * diffuse * 2.0;
+        col = vec3(0.85, 0.87, 0.92) * (0.55 + stripes * 0.2)
+            + vec3(0.20, 0.25, 0.35) * diffuse;
     }
 
     // Névoa: quanto mais longe, mais o pixel converge para o branco do ponto de fuga

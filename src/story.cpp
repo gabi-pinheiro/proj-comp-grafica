@@ -23,9 +23,9 @@ StoryFrame evaluateStory(float t)
     // intervalo das etapas 1 a 3, para o movimento não parar na troca de etapa.
     // Na fratura ela avança para dentro do artefato.
     float dolly = stageProgress(t, 0.0f, STORY_AWAKENING_END);
-    // Na fratura a câmera é "puxada aos solavancos" e engolida pelo artefato
-    // (distância chega a ~0.4, dentro da casca) antes de virar o túnel
-    frame.distance = glm::mix(22.0f, 5.5f, dolly) - 5.1f * fracture - 0.4f * fracture * pow(abs(std::sin(t * 2.3f)), 4.0f);
+    // Na fratura a câmera é "puxada aos solavancos" e engolida pelo artefato:
+    // a distância chega a ~0.1, bem dentro do núcleo (raio ~0.4), antes do túnel
+    frame.distance = glm::mix(22.0f, 5.5f, dolly) - 5.45f * fracture - 0.2f * fracture * pow(abs(std::sin(t * 2.3f)), 4.0f);
     frame.pitch = glm::mix(0.35f, 0.03f, dolly);
     frame.yaw = 0.7f * (1.0f - approach) + 0.3f * encounter + 1.4f * awakening + 0.6f * fracture;
 
@@ -35,7 +35,8 @@ StoryFrame evaluateStory(float t)
 
     // O artefato quase parado no início, depois desperta e acelera
     frame.animationSpeed = 0.08f + 0.92f * encounter + 3.0f * awakening;
-    frame.coreGlow = 0.5f + 1.0f * encounter + 2.5f * awakening + 2.0f * fracture;
+    // O núcleo brilha forte no fim da fratura, engolindo a tela quando a câmera entra nele
+    frame.coreGlow = 0.5f + 1.0f * encounter + 2.5f * awakening + 3.0f * fracture;
     frame.bloomBoost = 1.0f + 1.5f * awakening;
     frame.particles = t >= STORY_ENCOUNTER_END + 2.0f;
 
