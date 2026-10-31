@@ -11,8 +11,10 @@ const float STORY_FRACTURE_END = 54.0f;    // 4) a fratura (transição para a s
 const float STORY_CUT_TO_BLACK = 62.0f;    // 5) a sala de aula, até o corte para preto
 const float STORY_END = 64.0f;
 
-// Multiplica a velocidade da narrativa inteira (2.0 = duas vezes mais rápida)
-const float STORY_SPEED = 1.0f;
+// Multiplica a velocidade da narrativa inteira (2.0 = duas vezes mais rápida).
+// Os tempos acima são em "segundos de narrativa": com 2.15, a história inteira
+// (64 s de narrativa) leva ~30 segundos reais.
+const float STORY_SPEED = 2.15f;
 
 // Estado da cena em um instante da narrativa. Os valores padrão são os do modo livre.
 struct StoryFrame {

@@ -10,7 +10,7 @@ Uma cena 3D de ficção científica: um planeta alienígena escuro, com um gigan
 |---|---|
 | ![](docs/screenshots/sem-bloom-godrays.png) | ![](docs/screenshots/vista-estrela.png) |
 
-Ao abrir, o programa reproduz uma pequena narrativa de cerca de 60 segundos: a câmera se aproxima do artefato, ele desperta, a realidade se fratura e a cena termina numa sala de aula da EACH-USP (veja [Narrativa](#narrativa-the-fracture)).
+Ao abrir, o programa reproduz uma pequena narrativa de cerca de 30 segundos: a câmera se aproxima do artefato, ele desperta, a realidade se fratura e a cena termina numa sala de aula da EACH-USP (veja [Narrativa](#narrativa-the-fracture)).
 
 ## Tecnologias
 
@@ -185,7 +185,7 @@ A narrativa começa sozinha ao abrir o programa. Ela é controlada por uma linha
 | 54–62 s | O despertar na EACH-USP | As "pálpebras" abrem devagar sobre a foto, que entra em foco; a "cabeça" olha para um lado, para o outro e volta ao centro |
 | 62–64 s | Fim | Corte para preto; a narrativa fica parada aí até `N` ou `M` |
 
-Os tempos ficam em constantes no começo de `src/story.h` (`STORY_APPROACH_END`, `STORY_FRACTURE_END`, ...), e `STORY_SPEED` acelera ou desacelera a narrativa inteira. O tempo da narrativa avança com `deltaTime`, então a duração é a mesma em qualquer taxa de quadros. Cada etapa usa um progresso de 0 a 1 suavizado com `smoothstep`, para os movimentos começarem e terminarem devagar. A aproximação da câmera usa um único intervalo da etapa 1 até a 3, para o movimento não parar nas trocas de etapa.
+Os tempos ficam em constantes no começo de `src/story.h` (`STORY_APPROACH_END`, `STORY_FRACTURE_END`, ...) — eles são em "segundos de narrativa": com `STORY_SPEED = 2.15`, cada um vale ~0.47 s real e a história inteira leva ~30 s (as faixas da tabela acima estão nesses segundos de narrativa). Aumentar ou diminuir `STORY_SPEED` acelera ou desacelera a narrativa inteira. O tempo da narrativa avança com `deltaTime`, então a duração é a mesma em qualquer taxa de quadros. Cada etapa usa um progresso de 0 a 1 suavizado com `smoothstep`, para os movimentos começarem e terminarem devagar. A aproximação da câmera usa um único intervalo da etapa 1 até a 3, para o movimento não parar nas trocas de etapa.
 
 A transição fica no passe final, `composite.frag`, e recebe o progresso `uFracture` (0 a 1). Ela segue uma progressão única, inspirada na "Jornada Além do Infinito" de *2001*:
 
@@ -225,7 +225,7 @@ A foto é lida de **`assets/sala-each.jpg`** (JPG ou PNG, qualquer resolução; 
 - [x] Luz colorida do núcleo bloqueada pela casca da escultura
 - [x] Renderização HDR com bloom e god rays
 - [x] Partículas orbitais com instancing e blending aditivo
-- [x] Narrativa de ~60 s com linha do tempo, câmera cinematográfica, túnel 3D por ray marching estilo 2001 e "acordar" na sala de aula
+- [x] Narrativa de ~30 s com linha do tempo, câmera cinematográfica, túnel 3D por ray marching estilo 2001 e "acordar" na sala de aula
 
 ## Melhorias planejadas
 
