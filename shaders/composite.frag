@@ -199,9 +199,10 @@ void main()
         // A sala emerge do branco da luz (continuação suave do clarão)
         room = mix(vec3(1.0), room, smoothstep(0.0, 1.2, t));
 
-        // Uma piscada: as pálpebras fecham e reabrem rápido uma vez
+        // Uma piscada: as pálpebras fecham e reabrem rápido uma vez.
+        // lidEdge é o raio de abertura: blink=0 -> olhos abertos (0.75), blink=1 -> fechados (0)
         float blink = smoothstep(1.7, 1.9, t) * (1.0 - smoothstep(2.1, 2.8, t));
-        float lidEdge = clamp(blink, 0.0, 1.0) * 0.75;
+        float lidEdge = (1.0 - clamp(blink, 0.0, 1.0)) * 0.75;
         room *= 1.0 - smoothstep(lidEdge - 0.03, lidEdge, abs(p.y) + 0.2 * p.x * p.x);
 
         color = mix(color, room, smoothstep(0.97, 1.0, f));
