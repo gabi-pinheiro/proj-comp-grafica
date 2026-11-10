@@ -30,8 +30,6 @@ target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
 add_executable(anomaly
     src/main.cpp
     src/shader.cpp
-    src/geometry.cpp
-    src/framebuffer.cpp
     src/story.cpp
     src/texture.cpp
 )
