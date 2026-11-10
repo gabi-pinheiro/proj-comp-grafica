@@ -208,8 +208,11 @@ int main()
         double now = glfwGetTime();
         double dt = now - lastTime;
         lastTime = now;
+        // Um quadro muito lento (ex.: GPU fraca) não pode pular a narrativa:
+        // limita o passo de tempo a 0,1 s — a animação "espera" em vez de saltar
+        double step = std::min(dt, 0.1);
         if (!animationPaused)
-            animationTime += dt;
+            animationTime += step;
 
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
@@ -242,7 +245,7 @@ int main()
             storyPlaying = true;
         }
         if (storyPlaying && !animationPaused)
-            storyTime += dt * STORY_SPEED;
+            storyTime += step * STORY_SPEED;
 
         // Uniforms da narrativa (valem defaults de modo livre quando a história acabou)
         StoryFrame story = evaluateStory(storyPlaying ? float(storyTime) : 0.0f);
