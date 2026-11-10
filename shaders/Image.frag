@@ -19,8 +19,8 @@ out vec4 C;
 #include "common.glsl"
 #include "sculpture.glsl"
 
-#define MAX_STEPS 140
-#define MAX_DIST 110.
+#define MAX_STEPS 120
+#define MAX_DIST 90.
 #define SURF_DIST 0.008
 #define EPSILON 0.002
 #define TUNNEL_MAX_STEPS 140
@@ -30,8 +30,8 @@ const float TUNNEL_R = 1.0;
 const float RING_SPACING = 2.4;
 const float RING_SIZE = 0.07;
 const float RING_SPEED = 2.2;
-// O túnel toma conta da câmera no fim da fratura (vale ~1/4 do tempo dela)
-const float TUNNEL_START = 0.72;
+// O túnel toma conta da câmera na segunda metade da fratura (~10 s reais)
+const float TUNNEL_START = 0.55;
 
 ////////////////////
 //     TERRENO    //
@@ -86,6 +86,10 @@ Surface rocksSurface(vec3 p)
 {
     Surface best;
     best.d = MAX_DIST;
+    // Nenhuma rocha existe acima de ~14 u, abaixo do solo ou além de r=52:
+    // raios para o céu ou muito longe pulam o laço inteiro
+    if (p.y > 14.0 || p.y < -2.0 || dot(p.xz, p.xz) > 52.0 * 52.0)
+        return best;
     for (int i = 0; i < 48; i++) {
         float fi = float(i);
         bool shard = (i >= 40);
@@ -132,14 +136,15 @@ Surface rocksSurface(vec3 p)
 //   CENA (getDist) //
 ////////////////////
 
-Surface getDist(vec3 p)
+Surface getDist(vec3 p, bool withRocks)
 {
     // Terreno (a cor detalhada só é calculada na luz, não a cada passo)
     Surface g = surf(terrainDist(p), vec3(0.13, 0.09, 0.17), 0.25, 0.8, 0.05);
     g.mat = 1.0;
 
     Surface d = g;
-    d = unionS(d, rocksSurface(p));
+    if (withRocks)
+        d = unionS(d, rocksSurface(p));
 
     // A escultura só é avaliada perto do artefato (bounding sphere grossa)
     float bound = length(p - artifactCenter());
@@ -185,7 +190,14 @@ Surface tunnelDist(vec3 p)
 // escolhe o ramo em main(), então marcha e normal são sempre consistentes)
 Surface mapDist(vec3 p)
 {
-    return uFracture >= TUNNEL_START ? tunnelDist(p) : getDist(p);
+    return uFracture >= TUNNEL_START ? tunnelDist(p) : getDist(p, true);
+}
+
+// O raio até o núcleo ignora as rochas (o vazamento de luz entre elas é
+// imperceptível e isso poupa metade do custo da sombra do núcleo)
+Surface mapDistNoRocks(vec3 p)
+{
+    return uFracture >= TUNNEL_START ? tunnelDist(p) : getDist(p, false);
 }
 
 Surface rayMarching(vec3 Cam, vec3 rd)
@@ -223,12 +235,12 @@ vec3 estimateNormal(vec3 p)
 
 // Sombra suave ray-marcada: um segundo march em direção à luz guarda o quanto
 // o raio "raspou" em geometria (penumbra) — substitui o shadow map rasterizado
-float softShadow(vec3 ro, vec3 rd, float maxT)
+float softShadow(vec3 ro, vec3 rd, float maxT, bool withRocks)
 {
     float res = 1.0;
     float t = 0.04;
     for (int i = 0; i < 32; i++) {
-        float h = mapDist(ro + rd * t).d;
+        float h = withRocks ? mapDist(ro + rd * t).d : mapDistNoRocks(ro + rd * t).d;
         res = min(res, 10.0 * h / t);
         t += clamp(h, 0.02, 0.6);
         if (res < 0.005 || t > maxT)
@@ -243,7 +255,7 @@ float coreVisibility(vec3 p)
     vec3 core = artifactCenter();
     vec3 dir = core - p;
     float dist = length(dir);
-    return softShadow(p, dir / dist, dist - 0.05);
+    return softShadow(p, dir / dist, dist - 0.05, false);
 }
 
 ////////////////////
@@ -267,7 +279,7 @@ vec3 getLight(vec3 p, vec3 CamPos, Surface s, vec3 rd)
     // Sol direcional (Blinn-Phong) com sombra suave marchada
     float diffuse = max(dot(n, uLightDir), 0.0);
     if (diffuse > 0.0) {
-        float shadow = softShadow(p + n * 0.02, uLightDir, 40.0);
+        float shadow = softShadow(p + n * 0.02, uLightDir, 40.0, true);
         vec3 hv = normalize(uLightDir + v);
         float spec = pow(max(dot(n, hv), 0.0), 48.0);
         col += SUN_COLOR * shadow * (s.color * s.Kd * diffuse * 1.6 + s.Ks * spec * 0.6);
