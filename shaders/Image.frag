@@ -37,49 +37,94 @@ const float TUNNEL_START = 0.90;
 //     TERRENO    //
 ////////////////////
 
-// Relevo do terreno: duas oitavas de ruído, suave o suficiente para marchar
-float terrainHeight(vec2 xz)
+// FBM de 4 oitavas — mesma família de relevo da malha da versão anterior
+float terrainFbm(vec2 p)
 {
-    float h = valueNoise(xz * 0.045) * 3.2
-            + valueNoise(xz * 0.16) * 0.7
-            + valueNoise(xz * 0.5) * 0.15;
-    float d = length(xz);
-    // Achata a região ao redor do artefato e levanta ao longe
-    h *= smoothstep(2.0, 14.0, d) * 0.8 + 0.35 * smoothstep(0.0, 4.0, d);
-    return h;
+    float sum = 0.0, amp = 0.5, freq = 1.0;
+    for (int i = 0; i < 4; i++) {
+        sum += amp * valueNoise(p * freq);
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    return sum;
 }
 
-// Distância conservadora para o campo de altura (SDF "seguro" para marcha)
+// Relevo do terreno: dunas suaves, cratera sob o artefato e montanhas ao longe
+float terrainHeight(vec2 xz)
+{
+    float r = length(xz);
+
+    float dunes = (terrainFbm(xz * 0.05) - 0.45) * 3.0
+                + 0.4 * sin(xz.x * 0.21 + xz.y * 0.13);
+    float flatCenter = smoothstep(9.0, 24.0, r);
+
+    // Pequena cratera embaixo do artefato, como se ele tivesse marcado o solo
+    float crater = -0.35 * (1.0 - smoothstep(0.0, 6.5, r))
+                 + 0.3 * exp(-(r - 7.0) * (r - 7.0) / 1.5);
+
+    float mountains = smoothstep(35.0, 70.0, r)
+                    * terrainFbm(xz * 0.03 + vec2(7.0, 0.0)) * 16.0;
+
+    return dunes * flatCenter + crater + mountains;
+}
+
+// Distância amortecida para o campo de altura (a encosta trai a SDF exata;
+// o fator mantém os passos conservadores nas montanhas íngremes)
 float terrainDist(vec3 p)
 {
-    return (p.y - terrainHeight(p.xz)) * 0.55;
+    return (p.y - terrainHeight(p.xz)) * 0.45;
 }
 
 ////////////////////
 //     ROCHAS     //
 ////////////////////
 
-// Poucas rochas espalhadas por hash, unidas à SDF da cena
+// Mesma distribuição da versão em malha: um anel perto do artefato,
+// rochas espalhadas até ~40 u e 8 cacos altos no horizonte. Hash decide tudo.
 Surface rocksSurface(vec3 p)
 {
-    Surface r;
-    r.d = MAX_DIST;
-    for (int i = 0; i < 7; i++) {
+    Surface best;
+    best.d = MAX_DIST;
+    for (int i = 0; i < 48; i++) {
         float fi = float(i);
-        float ang = hash11(fi * 7.31) * 6.2831;
-        float rad = 4.5 + hash11(fi * 3.17) * 9.0;
+        bool shard = (i >= 40);
+        float ang = hash11(fi * 5.31) * 6.2831;
+        float rad = shard ? 18.0 + hash11(fi * 3.17) * 27.0
+                : (i < 10 ? 7.5 + hash11(fi * 1.77) * 3.5
+                          : 13.0 + hash11(fi * 1.93) * 27.0);
+        // Deixa livre o setor entre a câmera inicial e o artefato
+        if (!shard && rad < 13.0 && abs(ang - 1.5708) < 0.6)
+            continue;
+
+        float size = shard ? 1.0 + hash11(fi * 7.71) * 0.6
+                 : (i < 10 ? 0.4 + hash11(fi * 9.13) * 0.7
+                           : 0.6 + hash11(fi * 9.13) * 1.4);
+        vec3 radii = shard ? vec3(size, 4.0 + hash11(fi * 4.33) * 5.0, size)
+                           : vec3(size * (0.8 + 0.5 * hash11(fi * 2.31)),
+                                  size * (0.6 + 0.5 * hash11(fi * 3.97)), size);
+
+        // Teste barato em XZ: pula a rocha se o raio passa longe dela
+        float bound = max(radii.x, max(radii.y, radii.z)) + 4.0;
+        vec2 dxz = p.xz - vec2(cos(ang), sin(ang)) * rad;
+        if (dot(dxz, dxz) > bound * bound)
+            continue;
+
         vec3 center = vec3(cos(ang) * rad, 0.0, sin(ang) * rad);
-        center.y = terrainHeight(center.xz) + 0.05;
+        center.y = terrainHeight(center.xz) - 0.15 * radii.y;
         vec3 rp = p - center;
-        rp.xz *= rotate2D(hash11(fi * 5.7) * 3.0);
-        float size = 0.25 + hash11(fi * 9.3) * 0.45;
-        float d = ellipsoidDist(rp, vec3(size, size * (0.55 + 0.5 * hash11(fi)), size));
-        if (d < r.d) {
-            r.d = d;
-            r = surf(d, vec3(0.11, 0.07, 0.14), 0.2, 0.6, 0.05);
+        rp.xz *= rotate2D(hash11(fi * 6.17) * 6.2831);
+
+        // Elipsoide deformada por ruído e com a base achatada no solo
+        float d = ellipsoidDist(rp, radii)
+                - 0.20 * size * valueNoise3(rp * 1.8 / size + vec3(fi * 13.7));
+        d = max(d, (center.y - 0.45 * radii.y) - p.y);
+        if (d < best.d) {
+            vec3 base = shard ? vec3(0.11, 0.09, 0.19)
+                              : vec3(0.15, 0.12, 0.21) * (0.8 + 0.4 * hash11(fi * 11.3));
+            best = surf(d, base, 0.2, 0.6, 0.05);
         }
     }
-    return r;
+    return best;
 }
 
 ////////////////////
@@ -89,7 +134,7 @@ Surface rocksSurface(vec3 p)
 Surface getDist(vec3 p)
 {
     // Terreno
-    Surface g = surf(terrainDist(p), vec3(0.16, 0.09, 0.20), 0.25, 0.8, 0.05);
+    Surface g = surf(terrainDist(p), vec3(0.13, 0.09, 0.17), 0.25, 0.8, 0.05);
     float detail = 0.6 * valueNoise(p.xz * 0.7) + 0.4 * valueNoise(p.xz * 3.1);
     g.color *= 0.7 + 0.6 * detail;
 
