@@ -17,12 +17,14 @@ struct Surface {
     float Kd;
     float Ks;
     vec3 em;   // emissivo (núcleo, gemas, aros do túnel)
+    float mat; // material: 0 = genérico, 1 = chão (cor final resolvida na luz)
 };
 
 Surface surf(float d, vec3 color, float ka, float kd, float ks)
 {
     Surface s;
     s.d = d; s.color = color; s.Ka = ka; s.Kd = kd; s.Ks = ks; s.em = vec3(0.0);
+    s.mat = 0.0;
     return s;
 }
 

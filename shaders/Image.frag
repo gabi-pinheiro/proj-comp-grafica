@@ -19,8 +19,8 @@ out vec4 C;
 #include "common.glsl"
 #include "sculpture.glsl"
 
-#define MAX_STEPS 220
-#define MAX_DIST 160.
+#define MAX_STEPS 140
+#define MAX_DIST 110.
 #define SURF_DIST 0.008
 #define EPSILON 0.002
 #define TUNNEL_MAX_STEPS 140
@@ -30,8 +30,8 @@ const float TUNNEL_R = 1.0;
 const float RING_SPACING = 2.4;
 const float RING_SIZE = 0.07;
 const float RING_SPEED = 2.2;
-// O túnel toma conta da câmera no fim da fratura
-const float TUNNEL_START = 0.90;
+// O túnel toma conta da câmera no fim da fratura (vale ~1/4 do tempo dela)
+const float TUNNEL_START = 0.72;
 
 ////////////////////
 //     TERRENO    //
@@ -62,8 +62,9 @@ float terrainHeight(vec2 xz)
     float crater = -0.35 * (1.0 - smoothstep(0.0, 6.5, r))
                  + 0.3 * exp(-(r - 7.0) * (r - 7.0) / 1.5);
 
-    float mountains = smoothstep(35.0, 70.0, r)
-                    * terrainFbm(xz * 0.03 + vec2(7.0, 0.0)) * 16.0;
+    // As montanhas só existem longe: o FBM dela nem é avaliado perto do centro
+    float mountains = r > 33.0 ? smoothstep(35.0, 70.0, r)
+                      * terrainFbm(xz * 0.03 + vec2(7.0, 0.0)) * 16.0 : 0.0;
 
     return dunes * flatCenter + crater + mountains;
 }
@@ -133,10 +134,9 @@ Surface rocksSurface(vec3 p)
 
 Surface getDist(vec3 p)
 {
-    // Terreno
+    // Terreno (a cor detalhada só é calculada na luz, não a cada passo)
     Surface g = surf(terrainDist(p), vec3(0.13, 0.09, 0.17), 0.25, 0.8, 0.05);
-    float detail = 0.6 * valueNoise(p.xz * 0.7) + 0.4 * valueNoise(p.xz * 3.1);
-    g.color *= 0.7 + 0.6 * detail;
+    g.mat = 1.0;
 
     Surface d = g;
     d = unionS(d, rocksSurface(p));
@@ -227,7 +227,7 @@ float softShadow(vec3 ro, vec3 rd, float maxT)
 {
     float res = 1.0;
     float t = 0.04;
-    for (int i = 0; i < 48; i++) {
+    for (int i = 0; i < 32; i++) {
         float h = mapDist(ro + rd * t).d;
         res = min(res, 10.0 * h / t);
         t += clamp(h, 0.02, 0.6);
@@ -254,6 +254,12 @@ vec3 getLight(vec3 p, vec3 CamPos, Surface s, vec3 rd)
 {
     vec3 n = estimateNormal(p);
 
+    // Detalhe de cor do chão: calculado uma vez, no ponto atingido
+    if (s.mat == 1.0) {
+        float detail = 0.6 * valueNoise(p.xz * 0.7) + 0.4 * valueNoise(p.xz * 3.1);
+        s.color *= 0.7 + 0.6 * detail;
+    }
+
     vec3 ambient = mix(vec3(0.03, 0.015, 0.04), vec3(0.08, 0.05, 0.13), 0.5 + 0.5 * n.y);
     vec3 v = -rd;
     vec3 col = s.color * s.Ka * ambient * 12.0;
@@ -275,7 +281,7 @@ vec3 getLight(vec3 p, vec3 CamPos, Surface s, vec3 rd)
     col += s.em;
 
     // Ondas de energia que saem do artefato pelo chão
-    if (uFracture < TUNNEL_START && p.y < terrainHeight(p.xz) + 0.06) {
+    if (uFracture < TUNNEL_START && p.y < 4.0 && p.y < terrainHeight(p.xz) + 0.06) {
         float r = length(p.xz - artifactCenter().xz);
         float wave = smoothstep(0.97, 1.0, sin(r * 2.2 - iTime * 1.2)) * exp(-r * 0.3);
         col += coreColor() * wave * (0.08 + 0.08 * corePulse());
@@ -294,6 +300,10 @@ vec3 particleGlow(vec3 ro, vec3 rd, float maxT)
     if (uParticles <= 0.001)
         return vec3(0.0);
     vec3 center = artifactCenter();
+    // Se o raio nunca chega perto do artefato, nenhum glow vale a pena calcular
+    float tc = dot(center - ro, rd);
+    if (tc < -3.0 || length(ro + tc * rd - center) > 6.0)
+        return vec3(0.0);
     vec3 acc = vec3(0.0);
     for (int i = 0; i < 32; i++) {
         float fi = float(i);
@@ -455,8 +465,8 @@ void main()
         col += coreHalo(Cam, rd, maxD);
 
         // No fim da fratura a tela é engolida pelo brilho do núcleo
-        col += vec3(1.0) * exp(-length(p) * 3.0) * 4.0 * smoothstep(0.78, 0.9, f);
-        col = mix(col, vec3(1.0), smoothstep(0.86, 0.9, f));
+        col += vec3(1.0) * exp(-length(p) * 3.0) * 4.0 * smoothstep(TUNNEL_START - 0.14, TUNNEL_START, f);
+        col = mix(col, vec3(1.0), smoothstep(TUNNEL_START - 0.06, TUNNEL_START, f));
     }
 
     col = toneMap(col * (1.0 - uBlack));
