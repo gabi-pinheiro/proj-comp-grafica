@@ -19,7 +19,7 @@ out vec4 C;
 #include "common.glsl"
 #include "sculpture.glsl"
 
-#define MAX_STEPS 120
+#define MAX_STEPS 100
 #define MAX_DIST 90.
 #define SURF_DIST 0.008
 #define EPSILON 0.002
@@ -90,12 +90,12 @@ Surface rocksSurface(vec3 p)
     // raios para o céu ou muito longe pulam o laço inteiro
     if (p.y > 14.0 || p.y < -2.0 || dot(p.xz, p.xz) > 52.0 * 52.0)
         return best;
-    // 36 rochas (10 perto + 20 espalhadas + 6 cacos): mesma distribuição
-    // da versão em malha, mas SDF simples — ruído/rotação por rocha saía
-    // caro demais (é avaliado a cada passo da marcha)
-    for (int i = 0; i < 36; i++) {
+    // 18 rochas (8 perto + 6 espalhadas + 4 cacos): a distribuição é a da
+    // versão em malha reduzida — cada iteração custa um hash + teste por
+    // passo de marcha, então menos rochas = FPS direto
+    for (int i = 0; i < 18; i++) {
         float fi = float(i);
-        bool shard = (i >= 30);
+        bool shard = (i >= 14);
         float ang = hash11(fi * 5.31) * 6.2831;
         float rad = shard ? 18.0 + hash11(fi * 3.17) * 27.0
                 : (i < 10 ? 7.5 + hash11(fi * 1.77) * 3.5
@@ -239,7 +239,7 @@ float softShadow(vec3 ro, vec3 rd, float maxT, bool withRocks)
 {
     float res = 1.0;
     float t = 0.04;
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 16; i++) {
         float h = withRocks ? mapDist(ro + rd * t).d : mapDistNoRocks(ro + rd * t).d;
         res = min(res, 10.0 * h / t);
         t += clamp(h, 0.04, 0.8);
