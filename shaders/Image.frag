@@ -1,7 +1,7 @@
 #version 330 core
 
 // Image.frag - a cena inteira por ray marching, no estilo da engine do professor:
-// distCena() devolve uma Superficie (distância + material) e um único passo de
+// getDist() devolve uma Surface (distância + material) e um único passo de
 // fragment shader resolve geometria, luz, partículas, transição e a foto.
 
 uniform sampler2D iChannel0;   // foto da sala de aula
@@ -19,12 +19,12 @@ out vec4 C;
 #include "common.glsl"
 #include "sculpture.glsl"
 
-#define PASSOS_MAX 100
-#define DIST_MAX 90.
-#define DIST_SUP 0.008
+#define MAX_STEPS 100
+#define MAX_DIST 90.
+#define SURF_DIST 0.008
 #define EPSILON 0.002
-#define PASSOS_MAX_TUNEL 140
-#define DIST_MAX_TUNEL 30.
+#define TUNNEL_MAX_STEPS 140
+#define TUNNEL_MAX_DIST 30.
 
 const float RAIO_TUNEL = 1.0;
 const float ESPACO_AROS = 2.4;
@@ -82,10 +82,10 @@ float distTerreno(vec3 p)
 
 // Mesma distribuição da versão em malha: um anel perto do artefato,
 // rochas espalhadas até ~40 u e 8 cacos altos no horizonte. Hash decide tudo.
-Superficie supRochas(vec3 p)
+Surface supRochas(vec3 p)
 {
-    Superficie melhor;
-    melhor.d = DIST_MAX;
+    Surface melhor;
+    melhor.d = MAX_DIST;
     // Nenhuma rocha existe acima de ~14 u, abaixo do solo ou além de r=52:
     // raios para o céu ou muito longe pulam o laço inteiro
     if (p.y > 14.0 || p.y < -2.0 || dot(p.xz, p.xz) > 52.0 * 52.0)
@@ -122,36 +122,36 @@ Superficie supRochas(vec3 p)
         vec3 rp = p - centro;
 
         // Elipsoide achatada no solo: forma rochosa sem ruído por passo
-        float d = max(distElipsoide(rp, raios), (centro.y - 0.45 * raios.y) - p.y);
+        float d = max(ellipsoidDist(rp, raios), (centro.y - 0.45 * raios.y) - p.y);
         if (d < melhor.d) {
             vec3 base = caco ? vec3(0.11, 0.09, 0.19)
                               : vec3(0.15, 0.12, 0.21) * (0.8 + 0.4 * hash11(fi * 11.3));
-            melhor = sup(d, base, 0.2, 0.6, 0.05);
+            melhor = surf(d, base, 0.2, 0.6, 0.05);
         }
     }
     return melhor;
 }
 
 ////////////////////
-//   CENA (distCena) //
+//   CENA (getDist) //
 ////////////////////
 
-Superficie distCena(vec3 p, bool comRochas)
+Surface getDist(vec3 p, bool comRochas)
 {
-    // Terreno (a cor detalhada só é calculada na luz, não a cada passo)
-    Superficie g = sup(distTerreno(p), vec3(0.13, 0.09, 0.17), 0.25, 0.8, 0.05);
+    // Terreno (a color detalhada só é calculada na luz, não a cada passo)
+    Surface g = surf(distTerreno(p), vec3(0.13, 0.09, 0.17), 0.25, 0.8, 0.05);
     g.mat = 1.0;
 
-    Superficie d = g;
+    Surface d = g;
     if (comRochas)
-        d = uniao(d, supRochas(p));
+        d = unionS(d, supRochas(p));
 
     // A escultura só é avaliada perto do artefato (bounding sphere grossa)
     float limite = length(p - centroArtefato());
     if (limite < 3.5) {
-        d = uniao(d, supEscultura(p));
+        d = unionS(d, supEscultura(p));
     } else {
-        d = uniao(d, sup(limite - 3.0, vec3(0.0), 0.0, 0.0, 0.0));
+        d = unionS(d, surf(limite - 3.0, vec3(0.0), 0.0, 0.0, 0.0));
     }
     return d;
 }
@@ -162,9 +162,9 @@ Superficie distCena(vec3 p, bool comRochas)
 
 // O túnel da transição: cilindro claro com aros emissivos que vêm na direção
 // da câmera - geometria movendo, não a câmera, com a parede parada de referência
-Superficie distTunel(vec3 p)
+Surface distTunel(vec3 p)
 {
-    Superficie parede = sup(RAIO_TUNEL - length(p.xy), vec3(0.85, 0.87, 0.92), 0.5, 0.8, 0.0);
+    Surface parede = surf(RAIO_TUNEL - length(p.xy), vec3(0.85, 0.87, 0.92), 0.5, 0.8, 0.0);
 
     float pz = p.z + iTime * VEL_AROS;
     float ind = floor(pz / ESPACO_AROS);
@@ -176,10 +176,10 @@ Superficie distTunel(vec3 p)
     vec3 matiz = mix(CYAN, MAGENTA, hash11(ind * 0.47));
     matiz = mix(matiz, vec3(1.0, 0.75, 0.3), hash11(ind * 0.23) * 0.4);
     matiz = mix(matiz, vec3(0.55), 0.35);
-    Superficie ringS = sup(anel, vec3(0.0), 0.0, 0.0, 0.0);
+    Surface ringS = surf(anel, vec3(0.0), 0.0, 0.0, 0.0);
     ringS.em = matiz * 1.6;
 
-    return uniao(parede, ringS);
+    return unionS(parede, ringS);
 }
 
 ////////////////////
@@ -188,27 +188,27 @@ Superficie distTunel(vec3 p)
 
 // Quando a fratura termina, a cena inteira vira o túnel (mesmo uniform que
 // escolhe o ramo em main(), então marcha e normal são sempre consistentes)
-Superficie distGeral(vec3 p)
+Surface distGeral(vec3 p)
 {
-    return uFratura >= INICIO_TUNEL ? distTunel(p) : distCena(p, true);
+    return uFratura >= INICIO_TUNEL ? distTunel(p) : getDist(p, true);
 }
 
 // O raio até o núcleo ignora as rochas (o vazamento de luz entre elas é
 // imperceptível e isso poupa metade do custo da sombra do núcleo)
-Superficie distGeralSemRochas(vec3 p)
+Surface distGeralSemRochas(vec3 p)
 {
-    return uFratura >= INICIO_TUNEL ? distTunel(p) : distCena(p, false);
+    return uFratura >= INICIO_TUNEL ? distTunel(p) : getDist(p, false);
 }
 
-Superficie marcharRaio(vec3 cam, vec3 rd)
+Surface rayMarching(vec3 cam, vec3 rd)
 {
     float d0 = 0.0;
-    float maxD = uFratura >= INICIO_TUNEL ? DIST_MAX_TUNEL : DIST_MAX;
-    int passosMax = uFratura >= INICIO_TUNEL ? PASSOS_MAX_TUNEL : PASSOS_MAX;
+    float maxD = uFratura >= INICIO_TUNEL ? TUNNEL_MAX_DIST : MAX_DIST;
+    int passosMax = uFratura >= INICIO_TUNEL ? TUNNEL_MAX_STEPS : MAX_STEPS;
     vec3 pi = cam + d0 * rd;
-    Superficie s = distGeral(pi);
+    Surface s = distGeral(pi);
     int i = 0;
-    while (i < passosMax && s.d > DIST_SUP && d0 < maxD) {
+    while (i < passosMax && s.d > SURF_DIST && d0 < maxD) {
         d0 += s.d;
         pi = cam + d0 * rd;
         s = distGeral(pi);
@@ -220,7 +220,7 @@ Superficie marcharRaio(vec3 cam, vec3 rd)
     return s;
 }
 
-vec3 estimarNormal(vec3 p)
+vec3 estimateNormal(vec3 p)
 {
     float sd = distGeral(p).d;
     float dx = distGeral(vec3(p.x + EPSILON, p.y, p.z)).d - sd;
@@ -264,19 +264,19 @@ float visibilidadeNucleo(vec3 p)
 //      LUZ       //
 ////////////////////
 
-vec3 iluminar(vec3 p, vec3 posCam, Superficie s, vec3 rd)
+vec3 getLight(vec3 p, vec3 posCam, Surface s, vec3 rd)
 {
-    vec3 n = estimarNormal(p);
+    vec3 n = estimateNormal(p);
 
-    // Detalhe de cor do chão: calculado uma vez, no ponto atingido
+    // Detalhe de color do chão: calculado uma vez, no ponto atingido
     if (s.mat == 1.0) {
         float detalhe = 0.6 * ruido(p.xz * 0.7) + 0.4 * ruido(p.xz * 3.1);
-        s.cor *= 0.7 + 0.6 * detalhe;
+        s.color *= 0.7 + 0.6 * detalhe;
     }
 
     vec3 ambiente = mix(vec3(0.03, 0.015, 0.04), vec3(0.08, 0.05, 0.13), 0.5 + 0.5 * n.y);
     vec3 v = -rd;
-    vec3 cor = s.cor * s.Ka * ambiente * 12.0;
+    vec3 color = s.color * s.Ka * ambiente * 12.0;
 
     // Sol direcional (Blinn-Phong) com sombra suave marchada
     float difusa = max(dot(n, uDirLuz), 0.0);
@@ -284,23 +284,23 @@ vec3 iluminar(vec3 p, vec3 posCam, Superficie s, vec3 rd)
         float sombra = sombraSuave(p + n * 0.02, uDirLuz, 30.0, true);
         vec3 hv = normalize(uDirLuz + v);
         float espec = pow(max(dot(n, hv), 0.0), 48.0);
-        cor += COR_SOL * sombra * (s.cor * s.Kd * difusa * 1.6 + s.Ks * espec * 0.6);
+        color += COR_SOL * sombra * (s.color * s.Kd * difusa * 1.6 + s.Ks * espec * 0.6);
     }
 
     // Luz do núcleo, bloqueada pela casca
     float visNucleo = length(p - centroArtefato()) < 10.0 ? visibilidadeNucleo(p + n * 0.02) : 1.0;
-    cor += s.cor * luzNucleo(p, n) * 3.0 * visNucleo;
+    color += s.color * luzNucleo(p, n) * 3.0 * visNucleo;
 
     // Emissivo (núcleo, gemas, aros do túnel)
-    cor += s.em;
+    color += s.em;
 
     // Ondas de energia que saem do artefato pelo chão
     if (uFratura < INICIO_TUNEL && p.y < 4.0 && p.y < alturaTerreno(p.xz) + 0.06) {
         float r = length(p.xz - centroArtefato().xz);
         float onda = smoothstep(0.97, 1.0, sin(r * 2.2 - iTime * 1.2)) * exp(-r * 0.3);
-        cor += corNucleo() * onda * (0.08 + 0.08 * pulsoNucleo());
+        color += corNucleo() * onda * (0.08 + 0.08 * pulsoNucleo());
     }
-    return cor;
+    return color;
 }
 
 ////////////////////
@@ -353,7 +353,7 @@ vec3 haloNucleo(vec3 ro, vec3 rd, float tMax)
 //     CÂMERA     //
 ////////////////////
 
-mat3 definirCamera(vec3 Look_at, vec3 posCam)
+mat3 SetCamera(vec3 Look_at, vec3 posCam)
 {
     vec3 cd = normalize(Look_at - posCam);
     // sem normalize, o raio sai sem comprimento 1 quando a câmera inclina
@@ -418,13 +418,13 @@ void main()
     vec2 p = (gl_FragCoord.xy - 0.5 * iResolution) / iResolution.y;
     float f = uFratura;
 
-    vec3 cor;
+    vec3 color;
 
     if (uTempoSala >= 0.0) {
         // Sala de aula (textura em iChannel0)
-        cor = corSala(uv01, uTempoSala);
-        cor = mix(cor, vec3(0.0), uPreto);
-        C = vec4(cor, 1.0);
+        color = corSala(uv01, uTempoSala);
+        color = mix(color, vec3(0.0), uPreto);
+        C = vec4(color, 1.0);
         return;
     }
 
@@ -433,68 +433,68 @@ void main()
         vec3 ro = vec3(0.0, 0.0, 0.0);
         vec3 rd = normalize(vec3(p, 1.0));
         // leve oscilação da "mão segurando a câmera"
-        rd.xy = rot2D(0.06 * sin(iTime * 0.8)) * rd.xy;
+        rd.xy = rotate2D(0.06 * sin(iTime * 0.8)) * rd.xy;
 
-        Superficie s = marcharRaio(ro, rd);
-        vec3 corT;
-        if (s.d < DIST_MAX_TUNEL) {
+        Surface s = rayMarching(ro, rd);
+        vec3 colorT;
+        if (s.d < TUNNEL_MAX_DIST) {
             vec3 po = ro + s.d * rd;
-            vec3 n = estimarNormal(po);
+            vec3 n = estimateNormal(po);
             // luz à frente do túnel
             vec3 lpos = vec3(0.0, 0.0, po.z + 6.0);
             vec3 l = normalize(lpos - po);
             float dif = max(dot(n, l), 0.0);
             float listras = 0.5 + 0.5 * sin(atan(po.y, po.x) * 18.0);
-            corT = s.cor * (s.Ka + s.Kd * dif) + vec3(0.10, 0.12, 0.18) * listras * dif + s.em;
+            colorT = s.color * (s.Ka + s.Kd * dif) + vec3(0.10, 0.12, 0.18) * listras * dif + s.em;
             // névoa converge para o branco do ponto de fuga
-            corT = mix(corT, vec3(1.0), smoothstep(6.0, 24.0, s.d));
+            colorT = mix(colorT, vec3(1.0), smoothstep(6.0, 24.0, s.d));
         } else {
-            corT = vec3(1.0);
+            colorT = vec3(1.0);
         }
         // Clarão final: o ponto de fuga engole a tela
         float clarao = smoothstep(0.985, 0.998, f);
         float rr = length(p);
-        corT += vec3(1.0) * exp(-rr * 3.0) * 2.5 * smoothstep(0.96, 0.99, f);
-        corT = mix(corT, vec3(1.0), clarao);
+        colorT += vec3(1.0) * exp(-rr * 3.0) * 2.5 * smoothstep(0.96, 0.99, f);
+        colorT = mix(colorT, vec3(1.0), clarao);
 
         // Dissolve de entrada: o começo do túnel imita o último quadro da
         // cena (núcleo ciano ao centro, bordas violetas) - o corte some
         float dissolve = smoothstep(INICIO_TUNEL, INICIO_TUNEL + 0.08, f);
         vec3 quadroAnterior = mix(CYAN * 1.3 + vec3(0.5), vec3(0.16, 0.10, 0.24),
                              smoothstep(0.0, 0.45, rr));
-        corT = mix(quadroAnterior, corT, dissolve);
-        cor = corT;
+        colorT = mix(quadroAnterior, colorT, dissolve);
+        color = colorT;
     } else {
         // ===================== CENA =====================
         // A imagem se torce conforme a fratura avança (a câmera mergulha no núcleo)
         float torcao = f * 1.6 * smoothstep(1.4, 0.0, length(p));
-        p = rot2D(-torcao) * p;
+        p = rotate2D(-torcao) * p;
         p *= 1.0 - 0.25 * f;
 
         vec3 rd = normalize(vec3(p, 1.2));
         vec3 cam = uPosCam;
-        mat3 Mc = definirCamera(uAlvoCam, cam);
+        mat3 Mc = SetCamera(uAlvoCam, cam);
         rd = Mc * rd;
 
-        Superficie s = marcharRaio(cam, rd);
+        Surface s = rayMarching(cam, rd);
         float maxD = s.d;
-        if (s.d < DIST_MAX) {
+        if (s.d < MAX_DIST) {
             vec3 po = cam + s.d * rd;
-            cor = iluminar(po, cam, s, rd);
-            cor = aplicarNevoa(cor, s.d, rd);
+            color = getLight(po, cam, s, rd);
+            color = aplicarNevoa(color, s.d, rd);
         } else {
-            cor = renderizarCeu(rd);
+            color = renderizarCeu(rd);
         }
 
         // Brilhos acumulados ao longo do raio (partículas + halo do núcleo)
-        cor += brilhoParticulas(cam, rd, maxD);
-        cor += haloNucleo(cam, rd, maxD);
+        color += brilhoParticulas(cam, rd, maxD);
+        color += haloNucleo(cam, rd, maxD);
 
         // No fim da fratura a tela é engolida pelo brilho do núcleo
-        cor += vec3(1.0) * exp(-length(p) * 3.0) * 4.0 * smoothstep(INICIO_TUNEL - 0.14, INICIO_TUNEL, f);
-        cor = mix(cor, vec3(1.0), smoothstep(INICIO_TUNEL - 0.06, INICIO_TUNEL, f));
+        color += vec3(1.0) * exp(-length(p) * 3.0) * 4.0 * smoothstep(INICIO_TUNEL - 0.14, INICIO_TUNEL, f);
+        color = mix(color, vec3(1.0), smoothstep(INICIO_TUNEL - 0.06, INICIO_TUNEL, f));
     }
 
-    cor = mapearTom(cor * (1.0 - uPreto));
-    C = vec4(cor, 1.0);
+    color = mapearTom(color * (1.0 - uPreto));
+    C = vec4(color, 1.0);
 }

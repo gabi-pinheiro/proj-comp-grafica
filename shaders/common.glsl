@@ -1,5 +1,5 @@
 // Biblioteca compartilhada: mesmas convenções da engine do professor -
-// Superficie com material, operações CSG, transformações e primitivas SDF.
+// Surface com material, operações CSG, transformações e primitivas SDF.
 // Acrescentamos apenas o campo emissivo e os utilitários da nossa cena.
 
 uniform float uTime;        // tempo do artefato (velocidade controlada pela narrativa)
@@ -10,20 +10,20 @@ uniform float uParticulas;   // quantidade de partículas orbitais (0 a 1)
 
 #define PI 3.14159265359
 
-struct Superficie {
+struct Surface {
     float d;
-    vec3 cor;
+    vec3 color;
     float Ka;
     float Kd;
     float Ks;
     vec3 em;   // emissivo (núcleo, gemas, aros do túnel)
-    float mat; // material: 0 = genérico, 1 = chão (cor final resolvida na luz)
+    float mat; // material: 0 = genérico, 1 = chão (color final resolvida na luz)
 };
 
-Superficie sup(float d, vec3 cor, float ka, float kd, float ks)
+Surface surf(float d, vec3 color, float ka, float kd, float ks)
 {
-    Superficie s;
-    s.d = d; s.cor = cor; s.Ka = ka; s.Kd = kd; s.Ks = ks; s.em = vec3(0.0);
+    Surface s;
+    s.d = d; s.color = color; s.Ka = ka; s.Kd = kd; s.Ks = ks; s.em = vec3(0.0);
     s.mat = 0.0;
     return s;
 }
@@ -32,7 +32,7 @@ Superficie sup(float d, vec3 cor, float ka, float kd, float ks)
 // TRANSFORMAÇÕES //
 ////////////////////
 
-mat4 matTransl(vec3 t)
+mat4 trans(vec3 t)
 {
     return mat4(vec4(1., 0., 0., 0.),
                 vec4(0., 1., 0., 0.),
@@ -70,13 +70,13 @@ mat4 rotZ(in float angulo)
                 vec4(0.0, 0.0, 0.0, 1.0));
 }
 
-vec3 aplicarMatriz(vec3 p, mat4 m)
+vec3 opTransf(vec3 p, mat4 m)
 {
     return vec4(m * vec4(p, 1.)).xyz;
 }
 
 // Rotação 2D rápida (ângulo em radianos, sem mat4)
-mat2 rot2D(float a)
+mat2 rotate2D(float a)
 {
     float c = cos(a), s = sin(a);
     return mat2(c, -s, s, c);
@@ -86,34 +86,34 @@ mat2 rot2D(float a)
 // PRIMITIVAS SDF //
 ////////////////////
 
-float distEsfera(vec3 p, vec3 ce, float r)
+float sphereDist(vec3 p, vec3 ce, float r)
 {
     return length(p - ce) - r;
 }
 
-float distToro(vec3 p, vec2 t)
+float torusDist(vec3 p, vec2 t)
 {
     return length(vec2(length(p.xz) - t.x, p.y)) - t.y;
 }
 
-float distPlano(vec3 p, vec3 normal, float D)
+float planeDist(vec3 p, vec3 normal, float D)
 {
     return dot(p, normal) - D;
 }
 
-float distCaixa(vec3 p, vec3 b)
+float boxDist(vec3 p, vec3 b)
 {
     vec3 d = abs(p) - b;
     return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
 }
 
-float distCaixaArred(vec3 p, vec3 s, float r)
+float boxRoundDist(vec3 p, vec3 s, float r)
 {
     vec3 d = abs(p) - (s - r);
     return length(max(d, 0.0)) - r + min(max(d.x, max(d.y, d.z)), 0.0);
 }
 
-float distElipsoide(in vec3 p, in vec3 r) // aproximada
+float ellipsoidDist(in vec3 p, in vec3 r) // aproximada
 {
     float k0 = length(p / r);
     float k1 = length(p / (r * r));
@@ -124,19 +124,19 @@ float distElipsoide(in vec3 p, in vec3 r) // aproximada
 //  CSG  //
 ///////////
 
-Superficie uniao(Superficie s1, Superficie s2)
+Surface unionS(Surface s1, Surface s2)
 {
     return (s1.d <= s2.d) ? s1 : s2;
 }
 
-Superficie intersecao(Superficie s1, Superficie s2)
+Surface intersectionS(Surface s1, Surface s2)
 {
     return (s1.d <= s2.d) ? s2 : s1;
 }
 
-Superficie subtracao(Superficie s1, Superficie s2)
+Surface subtractionS(Surface s1, Surface s2)
 {
-    Superficie R;
+    Surface R;
     if (s1.d <= -s2.d) {
         R = s2;
         R.d = -s2.d;
@@ -146,10 +146,10 @@ Superficie subtracao(Superficie s1, Superficie s2)
 }
 
 // Versões escalares: úteis dentro de uma peça que depois recebe um material só
-float subtrair(float a, float b) { return max(a, -b); }
+float opSub(float a, float b) { return max(a, -b); }
 
 // União suave: emenda orgânica entre duas formas
-float uniaoSuave(float a, float b, float k)
+float opSmoothUnion(float a, float b, float k)
 {
     float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
     return mix(b, a, h) - k * h * (1.0 - h);
@@ -231,10 +231,10 @@ vec3 corCeu(vec3 direcao)
 {
     vec3 zenite = vec3(0.004, 0.004, 0.018);
     vec3 horizonte = vec3(0.13, 0.045, 0.17);
-    vec3 cor = mix(horizonte, zenite, pow(clamp(direcao.y, 0.0, 1.0), 0.45));
+    vec3 color = mix(horizonte, zenite, pow(clamp(direcao.y, 0.0, 1.0), 0.45));
     float qtdSol = max(dot(direcao, uDirLuz), 0.0);
-    cor += vec3(0.45, 0.13, 0.16) * pow(qtdSol, 8.0) * 0.6;
-    return cor;
+    color += vec3(0.45, 0.13, 0.16) * pow(qtdSol, 8.0) * 0.6;
+    return color;
 }
 
 // Estrelas por hash numa grade sobre a direção do raio
@@ -269,11 +269,11 @@ const vec3 NORMAL_ANEL = vec3(0.22965761, 0.91863042, 0.32152065); // normalize(
 // Céu completo: gradiente, estrela, planeta gigante com anéis e estrelas
 vec3 renderizarCeu(vec3 rd)
 {
-    vec3 cor = corCeu(rd);
+    vec3 color = corCeu(rd);
 
     // Disco da estrela principal
     float qtdSol = dot(rd, uDirLuz);
-    cor += COR_SOL * (smoothstep(0.9990, 0.9995, qtdSol) * 4.0 + pow(max(qtdSol, 0.0), 400.0) * 1.5);
+    color += COR_SOL * (smoothstep(0.9990, 0.9995, qtdSol) * 4.0 + pow(max(qtdSol, 0.0), 400.0) * 1.5);
 
     // Planeta gigante tratado como esfera muito distante
     vec3 centroPlaneta = DIR_PLANETA * 100.0;
@@ -287,9 +287,9 @@ vec3 renderizarCeu(vec3 rd)
         float faixas = sin(latitude * 18.0 + 2.0 * sin(latitude * 5.0));
         vec3 superficie = mix(vec3(0.30, 0.15, 0.42), vec3(0.70, 0.38, 0.55), 0.5 + 0.5 * faixas);
         float borda = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
-        cor = superficie * (luz * 0.8 + 0.015) + vec3(0.6, 0.3, 0.8) * borda * (0.15 + luz);
+        color = superficie * (luz * 0.8 + 0.015) + vec3(0.6, 0.3, 0.8) * borda * (0.15 + luz);
     } else {
-        cor += estrelas(rd);
+        color += estrelas(rd);
     }
 
     float tAnel = dot(centroPlaneta, NORMAL_ANEL) / dot(rd, NORMAL_ANEL);
@@ -298,21 +298,21 @@ vec3 renderizarCeu(vec3 rd)
         if (distAnel2 > 1.35 && distAnel2 < 2.3) {
             float listras = 0.6 + 0.4 * sin(distAnel2 * 14.0);
             float esmaecer = smoothstep(1.35, 1.5, distAnel2) * (1.0 - smoothstep(2.1, 2.3, distAnel2));
-            cor = mix(cor, vec3(0.60, 0.45, 0.62) * 0.4, 0.6 * listras * esmaecer);
+            color = mix(color, vec3(0.60, 0.45, 0.62) * 0.4, 0.6 * listras * esmaecer);
         }
     }
-    return cor;
+    return color;
 }
 
 //////////
 //  FOG //
 //////////
 
-// Névoa exponencial quadrática, misturando na cor do céu na direção do raio
-vec3 aplicarNevoa(vec3 cor, float dist, vec3 rayDir)
+// Névoa exponencial quadrática, misturando na color do céu na direção do raio
+vec3 aplicarNevoa(vec3 color, float dist, vec3 rayDir)
 {
     float fog = 1.0 - exp(-pow(dist * 0.022, 2.0));
-    return mix(cor, corCeu(rayDir), fog);
+    return mix(color, corCeu(rayDir), fog);
 }
 
 //////////////////
