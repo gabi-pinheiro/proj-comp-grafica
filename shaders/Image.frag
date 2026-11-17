@@ -452,6 +452,13 @@ void main()
         float rr = length(p);
         tcol += vec3(1.0) * exp(-rr * 3.0) * 2.5 * smoothstep(0.96, 0.99, f);
         tcol = mix(tcol, vec3(1.0), whiteout);
+
+        // Dissolve de entrada: o começo do túnel imita o último quadro da
+        // cena (núcleo ciano ao centro, bordas violetas) — o corte some
+        float blendIn = smoothstep(TUNNEL_START, TUNNEL_START + 0.08, f);
+        vec3 lastFrame = mix(CYAN * 1.3 + vec3(0.5), vec3(0.16, 0.10, 0.24),
+                             smoothstep(0.0, 0.45, rr));
+        tcol = mix(lastFrame, tcol, blendIn);
         col = tcol;
     } else {
         // ===================== CENA =====================
