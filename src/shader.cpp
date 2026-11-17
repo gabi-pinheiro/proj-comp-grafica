@@ -63,7 +63,7 @@ static GLuint compileShader(GLenum type, const std::string& path)
     return shader;
 }
 
-GLuint createShaderProgram(const std::string& vertexFile, const std::string& fragmentFile)
+GLuint criarProgramaShader(const std::string& vertexFile, const std::string& fragmentFile)
 {
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, SHADER_DIR + vertexFile);
     GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, SHADER_DIR + fragmentFile);
@@ -92,32 +92,32 @@ GLuint createShaderProgram(const std::string& vertexFile, const std::string& fra
     return program;
 }
 
-void setUniform(GLuint program, const char* name, int value)
+void uniforme(GLuint program, const char* name, int value)
 {
     glUniform1i(glGetUniformLocation(program, name), value);
 }
 
-void setUniform(GLuint program, const char* name, float value)
+void uniforme(GLuint program, const char* name, float value)
 {
     glUniform1f(glGetUniformLocation(program, name), value);
 }
 
-void setUniform(GLuint program, const char* name, const glm::vec2& value)
+void uniforme(GLuint program, const char* name, const glm::vec2& value)
 {
     glUniform2fv(glGetUniformLocation(program, name), 1, glm::value_ptr(value));
 }
 
-void setUniform(GLuint program, const char* name, const glm::vec3& value)
+void uniforme(GLuint program, const char* name, const glm::vec3& value)
 {
     glUniform3fv(glGetUniformLocation(program, name), 1, glm::value_ptr(value));
 }
 
-void setUniform(GLuint program, const char* name, const glm::mat3& value)
+void uniforme(GLuint program, const char* name, const glm::mat3& value)
 {
     glUniformMatrix3fv(glGetUniformLocation(program, name), 1, GL_FALSE, glm::value_ptr(value));
 }
 
-void setUniform(GLuint program, const char* name, const glm::mat4& value)
+void uniforme(GLuint program, const char* name, const glm::mat4& value)
 {
     glUniformMatrix4fv(glGetUniformLocation(program, name), 1, GL_FALSE, glm::value_ptr(value));
 }

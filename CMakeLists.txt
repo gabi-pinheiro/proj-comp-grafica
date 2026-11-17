@@ -30,7 +30,7 @@ target_link_libraries(glad PUBLIC ${CMAKE_DL_LIBS})
 add_executable(anomaly
     src/main.cpp
     src/shader.cpp
-    src/story.cpp
+    src/quadro.cpp
     src/texture.cpp
 )
 target_link_libraries(anomaly PRIVATE glad glfw glm::glm)

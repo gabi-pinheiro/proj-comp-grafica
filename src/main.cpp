@@ -1,8 +1,8 @@
-// The Anomaly — versão completa sobre a engine de ray marching do professor.
+// The Anomaly - versão completa sobre a engine de ray marching do professor.
 //
 // A estrutura segue a engine (Math3.cpp): um único quad em tela cheia e um
 // fragment shader (Shaders/Image.frag) que calcula a cena inteira por ray
-// marching — nenhuma geometria é rasterizada.
+// marching - nenhuma geometria é rasterizada.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -14,13 +14,13 @@
 #include <string>
 
 #include "shader.h"
-#include "story.h"
+#include "quadro.h"
 #include "texture.h"
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void callbackRedimensionar(GLFWwindow* janela, int width, int height);
 
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 720;
+const unsigned int LARGURA_JANELA = 1280;
+const unsigned int ALTURA_JANELA = 720;
 
 // Quad em tela cheia: os 2 triângulos só servem para disparar o fragment shader
 float vertices[] = {
@@ -33,94 +33,94 @@ float vertices[] = {
 unsigned int indices[] = { 0, 1, 3, 1, 2, 3 };
 
 // Câmera de órbita do modo livre (a narrativa controla a câmera sozinha)
-struct OrbitCamera {
-    glm::vec3 target = glm::vec3(0.0f, 2.4f, 0.0f);
-    float yaw = 0.0f;
-    float pitch = 0.06f;
-    float distance = 7.5f;
+struct CameraOrbita {
+    glm::vec3 alvo = glm::vec3(0.0f, 2.4f, 0.0f);
+    float angulo = 0.0f;
+    float elevacao = 0.06f;
+    float distancia = 7.5f;
 
-    glm::vec3 position() const
+    glm::vec3 posicao() const
     {
-        return target + distance * glm::vec3(std::sin(yaw) * std::cos(pitch),
-                                              std::sin(pitch),
-                                              std::cos(yaw) * std::cos(pitch));
+        return alvo + distancia * glm::vec3(std::sin(angulo) * std::cos(elevacao),
+                                              std::sin(elevacao),
+                                              std::cos(angulo) * std::cos(elevacao));
     }
 };
 
 // Foto revelada no fim da narrativa (pasta assets/ do projeto)
-const char* CLASSROOM_IMAGE = "sala-each.jpg";
+const char* IMAGEM_SALA = "sala-each.jpg";
 
-static OrbitCamera camera;
-static bool isDragging = false;
-static bool firstDrag = true;
-static double lastMouseX = 0.0, lastMouseY = 0.0;
-static bool animationPaused = false;
-static bool autoOrbit = false;
-static bool reloadRequested = false;
-static bool particlesEnabled = true;
+static CameraOrbita cam;
+static bool arrastando = false;
+static bool primeiroArrasto = true;
+static double mouseAntX = 0.0, mouseAntY = 0.0;
+static bool pausada = false;
+static bool orbitaAuto = false;
+static bool recarregaPendente = false;
+static bool particulasAtivas = true;
 // A narrativa começa sozinha; durante ela a câmera é controlada pela linha do tempo
-static bool storyPlaying = true;
-static bool storyRestartRequested = false;
+static bool historiaTocando = true;
+static bool reiniciarHistoria = false;
 
-static void keyCallback(GLFWwindow* window, int key, int, int action, int)
+static void callbackTeclas(GLFWwindow* janela, int tecla, int, int acao, int)
 {
-    if (action != GLFW_PRESS)
+    if (acao != GLFW_PRESS)
         return;
-    switch (key) {
-    case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(window, true); break;
-    case GLFW_KEY_SPACE:  animationPaused = !animationPaused; break;
-    case GLFW_KEY_N:      storyRestartRequested = true; break;
+    switch (tecla) {
+    case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(janela, true); break;
+    case GLFW_KEY_SPACE:  pausada = !pausada; break;
+    case GLFW_KEY_N:      reiniciarHistoria = true; break;
     // M sai da narrativa para o modo livre; A e P só fazem sentido lá
-    case GLFW_KEY_M:      if (storyPlaying) { storyPlaying = false; camera.distance = 10.0f; } break;
-    case GLFW_KEY_A:      if (!storyPlaying) autoOrbit = !autoOrbit; break;
-    case GLFW_KEY_P:      if (!storyPlaying) particlesEnabled = !particlesEnabled; break;
-    case GLFW_KEY_R:      if (!storyPlaying) camera = OrbitCamera(); break;
-    case GLFW_KEY_F5:     reloadRequested = true; break;
+    case GLFW_KEY_M:      if (historiaTocando) { historiaTocando = false; cam.distancia = 10.0f; } break;
+    case GLFW_KEY_A:      if (!historiaTocando) orbitaAuto = !orbitaAuto; break;
+    case GLFW_KEY_P:      if (!historiaTocando) particulasAtivas = !particulasAtivas; break;
+    case GLFW_KEY_R:      if (!historiaTocando) cam = CameraOrbita(); break;
+    case GLFW_KEY_F5:     recarregaPendente = true; break;
     }
 }
 
-static void mouseButtonCallback(GLFWwindow*, int button, int action, int)
+static void callbackBotaoMouse(GLFWwindow*, int botao, int acao, int)
 {
-    if (storyPlaying)
+    if (historiaTocando)
         return;
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        isDragging = (action == GLFW_PRESS);
-        firstDrag = true;
+    if (botao == GLFW_MOUSE_BUTTON_LEFT) {
+        arrastando = (acao == GLFW_PRESS);
+        primeiroArrasto = true;
     }
 }
 
-static void cursorPosCallback(GLFWwindow*, double x, double y)
+static void callbackCursor(GLFWwindow*, double x, double y)
 {
-    if (!isDragging || storyPlaying) {
-        lastMouseX = x;
-        lastMouseY = y;
+    if (!arrastando || historiaTocando) {
+        mouseAntX = x;
+        mouseAntY = y;
         return;
     }
-    if (firstDrag) {
-        firstDrag = false;
-        lastMouseX = x;
-        lastMouseY = y;
+    if (primeiroArrasto) {
+        primeiroArrasto = false;
+        mouseAntX = x;
+        mouseAntY = y;
         return;
     }
-    camera.yaw -= float(x - lastMouseX) * 0.005f;
-    camera.pitch = glm::clamp(camera.pitch + float(y - lastMouseY) * 0.005f, -1.2f, 1.2f);
-    lastMouseX = x;
-    lastMouseY = y;
+    cam.angulo -= float(x - mouseAntX) * 0.005f;
+    cam.elevacao = glm::clamp(cam.elevacao + float(y - mouseAntY) * 0.005f, -1.2f, 1.2f);
+    mouseAntX = x;
+    mouseAntY = y;
 }
 
-static void scrollCallback(GLFWwindow*, double, double yoff)
+static void callbackScroll(GLFWwindow*, double, double deslY)
 {
-    if (storyPlaying)
+    if (historiaTocando)
         return;
-    camera.distance = glm::clamp(camera.distance - float(yoff) * 0.7f, 2.0f, 30.0f);
+    cam.distancia = glm::clamp(cam.distancia - float(deslY) * 0.7f, 2.0f, 30.0f);
 }
 
 // Impede a câmera de mergulhar no terreno no modo livre (guarda-chuva aproximado)
-static void clampCameraAboveTerrain()
+static void prenderCamNoChao()
 {
-    float y = camera.target.y + camera.distance * sin(camera.pitch);
+    float y = cam.alvo.y + cam.distancia * sin(cam.elevacao);
     if (y < 0.8f)
-        camera.pitch = std::asin(glm::clamp((0.8f - camera.target.y) / camera.distance, -1.0f, 1.0f));
+        cam.elevacao = std::asin(glm::clamp((0.8f - cam.alvo.y) / cam.distancia, -1.0f, 1.0f));
 }
 
 int main()
@@ -133,31 +133,31 @@ int main()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "The Anomaly", NULL, NULL);
-    if (window == NULL) {
-        std::cout << "Failed to create GLFW window" << std::endl;
+    GLFWwindow* janela = glfwCreateWindow(LARGURA_JANELA, ALTURA_JANELA, "The Anomaly", NULL, NULL);
+    if (janela == NULL) {
+        std::cout << "Failed to create GLFW janela" << std::endl;
         glfwTerminate();
         return -1;
     }
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetMouseButtonCallback(window, mouseButtonCallback);
-    glfwSetCursorPosCallback(window, cursorPosCallback);
-    glfwSetScrollCallback(window, scrollCallback);
+    glfwMakeContextCurrent(janela);
+    glfwSetFramebufferSizeCallback(janela, callbackRedimensionar);
+    glfwSetKeyCallback(janela, callbackTeclas);
+    glfwSetMouseButtonCallback(janela, callbackBotaoMouse);
+    glfwSetCursorPosCallback(janela, callbackCursor);
+    glfwSetScrollCallback(janela, callbackScroll);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
 
-    // createShaderProgram resolve os nomes dentro de SHADER_DIR (shaders/)
-    GLuint imageProgram = createShaderProgram("fullscreen.vert", "Image.frag");
-    if (!imageProgram)
+    // criarProgramaShader resolve os nomes dentro de SHADER_DIR (shaders/)
+    GLuint progImagem = criarProgramaShader("fullscreen.vert", "Image.frag");
+    if (!progImagem)
         return -1;
     // Passe de apresentação: só estica a imagem pronta para a janela inteira
-    GLuint blitProgram = createShaderProgram("fullscreen.vert", "blit.frag");
-    if (!blitProgram)
+    GLuint progBlit = criarProgramaShader("fullscreen.vert", "blit.frag");
+    if (!progBlit)
         return -1;
 
     ////////////////////
@@ -184,181 +184,181 @@ int main()
     //    TEXTURAS     //
     ////////////////////
     // iChannel0 = foto da sala de aula (única imagem importada do projeto)
-    float roomAspect = 1.0f;
-    GLuint roomTexture = loadTexture(std::string(ASSET_DIR) + CLASSROOM_IMAGE, roomAspect);
+    float aspectoSala = 1.0f;
+    GLuint texSala = carregarTextura(std::string(ASSET_DIR) + IMAGEM_SALA, aspectoSala);
 
     // A cena é 100% ray marching: cada pixel custa uma marcha inteira. Em GPUs
     // fracas isso fica lento, então marchamos numa textura menor e só esticamos
     // a imagem na janela (o passe final é 2D, não rasterização da cena).
-    const float RENDER_SCALE = 0.75f;
-    GLuint sceneFbo = 0, sceneTex = 0;
-    glGenFramebuffers(1, &sceneFbo);
-    glGenTextures(1, &sceneTex);
-    int renderW = 0, renderH = 0;
+    const float ESCALA_INTERNA = 0.75f;
+    GLuint fboCena = 0, texCena = 0;
+    glGenFramebuffers(1, &fboCena);
+    glGenTextures(1, &texCena);
+    int largInterna = 0, altInterna = 0;
 
-    glm::vec2 resolution(SCR_WIDTH, SCR_HEIGHT);
-    glUseProgram(imageProgram);
-    setUniform(imageProgram, "iChannel0", 1);
-    setUniform(imageProgram, "uRoomAspect", roomAspect);
-    setUniform(imageProgram, "uLightDir", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
+    glm::vec2 resolucao(LARGURA_JANELA, ALTURA_JANELA);
+    glUseProgram(progImagem);
+    uniforme(progImagem, "iChannel0", 1);
+    uniforme(progImagem, "uAspectoSala", aspectoSala);
+    uniforme(progImagem, "uDirLuz", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
 
-    glUseProgram(blitProgram);
-    setUniform(blitProgram, "uScene", 0);
+    glUseProgram(progBlit);
+    uniforme(progBlit, "uCena", 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, roomTexture);
+    glBindTexture(GL_TEXTURE_2D, texSala);
 
     glDisable(GL_CULL_FACE);   // o quad em tela cheia é desenhado dos dois lados
 
-    double fpsTimer = glfwGetTime();
-    int fpsFrames = 0;
-    double lastTime = glfwGetTime();
-    double animationTime = 0.0;   // tempo da animação (pausável)
-    double storyTime = 0.0;       // tempo de narrativa (escala STORY_SPEED)
+    double timerFps = glfwGetTime();
+    int quadrosFps = 0;
+    double tempoAnterior = glfwGetTime();
+    double tempoAnim = 0.0;   // tempo da animação (pausável)
+    double tempoHistoria = 0.0;       // tempo de narrativa (escala VELOCIDADE_HISTORIA)
 
     ////////////////////
     //  RENDER LOOP   //
     ////////////////////
-    while (!glfwWindowShouldClose(window)) {
-        double now = glfwGetTime();
-        double dt = now - lastTime;
-        lastTime = now;
+    while (!glfwWindowShouldClose(janela)) {
+        double agora = glfwGetTime();
+        double dt = agora - tempoAnterior;
+        tempoAnterior = agora;
         // Um quadro muito lento (ex.: GPU fraca) não pode pular a narrativa:
-        // limita o passo de tempo a 0,1 s — a animação "espera" em vez de saltar
-        double step = std::min(dt, 0.1);
-        if (!animationPaused)
-            animationTime += step;
+        // limita o passo de tempo a 0,1 s - a animação "espera" em vez de saltar
+        double passo = std::min(dt, 0.1);
+        if (!pausada)
+            tempoAnim += passo;
 
         int w, h;
-        glfwGetFramebufferSize(window, &w, &h);
-        // Com a janela minimizada não há o que desenhar: espera o próximo frame
-        if (w == 0 || h == 0 || glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
+        glfwGetFramebufferSize(janela, &w, &h);
+        // Com a janela minimizada não há o que desenhar: espera o próximo quadro
+        if (w == 0 || h == 0 || glfwGetWindowAttrib(janela, GLFW_ICONIFIED)) {
             glfwWaitEventsTimeout(0.1);
             continue;
         }
 
-        if (reloadRequested) {
-            reloadRequested = false;
-            GLuint reloaded = createShaderProgram("fullscreen.vert", "Image.frag");
-            if (reloaded) {
-                glDeleteProgram(imageProgram);
-                imageProgram = reloaded;
-                glUseProgram(imageProgram);
-                setUniform(imageProgram, "iChannel0", 1);
-                setUniform(imageProgram, "uRoomAspect", roomAspect);
-                setUniform(imageProgram, "uLightDir", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
+        if (recarregaPendente) {
+            recarregaPendente = false;
+            GLuint recarregado = criarProgramaShader("fullscreen.vert", "Image.frag");
+            if (recarregado) {
+                glDeleteProgram(progImagem);
+                progImagem = recarregado;
+                glUseProgram(progImagem);
+                uniforme(progImagem, "iChannel0", 1);
+                uniforme(progImagem, "uAspectoSala", aspectoSala);
+                uniforme(progImagem, "uDirLuz", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
                 std::cout << "Shaders recarregados" << std::endl;
             } else {
                 std::cout << "Falha ao recarregar shaders (mantendo os anteriores)" << std::endl;
             }
         }
 
-        if (storyRestartRequested) {
-            storyRestartRequested = false;
-            storyTime = 0.0;
-            storyPlaying = true;
+        if (reiniciarHistoria) {
+            reiniciarHistoria = false;
+            tempoHistoria = 0.0;
+            historiaTocando = true;
         }
-        if (storyPlaying && !animationPaused)
-            storyTime += step * STORY_SPEED;
+        if (historiaTocando && !pausada)
+            tempoHistoria += passo * VELOCIDADE_HISTORIA;
 
         // Uniforms da narrativa (valem defaults de modo livre quando a história acabou)
-        StoryFrame story = evaluateStory(storyPlaying ? float(storyTime) : 0.0f);
-        glm::vec3 camPos, camTarget;
-        float yaw, pitch, distance;
-        if (storyPlaying) {
-            yaw = story.yaw; pitch = story.pitch; distance = story.distance;
-            camTarget = camera.target;
-            camPos = camTarget + distance * glm::vec3(std::sin(yaw) * std::cos(pitch),
-                                                    std::sin(pitch),
-                                                    std::cos(yaw) * std::cos(pitch));
-            camPos += story.cameraShake;
+        QuadroHistoria quadro = avaliarHistoria(historiaTocando ? float(tempoHistoria) : 0.0f);
+        glm::vec3 posCam, alvoCam;
+        float angulo, elevacao, distancia;
+        if (historiaTocando) {
+            angulo = quadro.angulo; elevacao = quadro.elevacao; distancia = quadro.distancia;
+            alvoCam = cam.alvo;
+            posCam = alvoCam + distancia * glm::vec3(std::sin(angulo) * std::cos(elevacao),
+                                                    std::sin(elevacao),
+                                                    std::cos(angulo) * std::cos(elevacao));
+            posCam += quadro.tremorCamera;
         } else {
-            if (autoOrbit && !animationPaused)
-                camera.yaw += float(dt) * 0.25f;
-            clampCameraAboveTerrain();
-            camTarget = camera.target;
-            camPos = camera.position();
-            story.fracture = 0.0f;
-            story.classroomTime = -1.0f;
-            story.black = 0.0f;
-            story.coreGlow = 1.0f;
-            story.animationSpeed = 1.0f;
+            if (orbitaAuto && !pausada)
+                cam.angulo += float(dt) * 0.25f;
+            prenderCamNoChao();
+            alvoCam = cam.alvo;
+            posCam = cam.posicao();
+            quadro.fratura = 0.0f;
+            quadro.tempoSala = -1.0f;
+            quadro.preto = 0.0f;
+            quadro.brilhoNucleo = 1.0f;
+            quadro.velAnimacao = 1.0f;
         }
 
         // Textura interna em resolução reduzida (recriada se a janela mudar)
-        int fbW, fbH;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
-        int rw = std::max(1, int(fbW * RENDER_SCALE));
-        int rh = std::max(1, int(fbH * RENDER_SCALE));
-        if (rw != renderW || rh != renderH) {
-            renderW = rw;
-            renderH = rh;
-            resolution = glm::vec2(float(renderW), float(renderH));
-            glBindTexture(GL_TEXTURE_2D, sceneTex);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, renderW, renderH, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        int largFb, altFb;
+        glfwGetFramebufferSize(janela, &largFb, &altFb);
+        int rw = std::max(1, int(largFb * ESCALA_INTERNA));
+        int rh = std::max(1, int(altFb * ESCALA_INTERNA));
+        if (rw != largInterna || rh != altInterna) {
+            largInterna = rw;
+            altInterna = rh;
+            resolucao = glm::vec2(float(largInterna), float(altInterna));
+            glBindTexture(GL_TEXTURE_2D, texCena);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, largInterna, altInterna, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTex, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, fboCena);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texCena, 0);
         }
 
         // Passo 1: marcha a cena inteira na textura menor
-        glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
-        glViewport(0, 0, renderW, renderH);
+        glBindFramebuffer(GL_FRAMEBUFFER, fboCena);
+        glViewport(0, 0, largInterna, altInterna);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUseProgram(imageProgram);
+        glUseProgram(progImagem);
         glBindVertexArray(VAO);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, roomTexture);
+        glBindTexture(GL_TEXTURE_2D, texSala);
 
-        setUniform(imageProgram, "iResolution", resolution);
-        setUniform(imageProgram, "iTime", float(animationTime));
-        setUniform(imageProgram, "uTime", float(animationTime) * story.animationSpeed);
-        setUniform(imageProgram, "uCamPos", camPos);
-        setUniform(imageProgram, "uCamTarget", camTarget);
-        setUniform(imageProgram, "uCoreGlow", story.coreGlow);
-        setUniform(imageProgram, "uFracture", story.fracture);
-        setUniform(imageProgram, "uRoomT", story.classroomTime);
-        setUniform(imageProgram, "uBlack", story.black);
-        setUniform(imageProgram, "uParticles", (storyPlaying ? story.particles : particlesEnabled) ? 1.0f : 0.0f);
+        uniforme(progImagem, "iResolution", resolucao);
+        uniforme(progImagem, "iTime", float(tempoAnim));
+        uniforme(progImagem, "uTime", float(tempoAnim) * quadro.velAnimacao);
+        uniforme(progImagem, "uPosCam", posCam);
+        uniforme(progImagem, "uAlvoCam", alvoCam);
+        uniforme(progImagem, "uBrilhoNucleo", quadro.brilhoNucleo);
+        uniforme(progImagem, "uFratura", quadro.fratura);
+        uniforme(progImagem, "uTempoSala", quadro.tempoSala);
+        uniforme(progImagem, "uPreto", quadro.preto);
+        uniforme(progImagem, "uParticulas", (historiaTocando ? quadro.particulas : particulasAtivas) ? 1.0f : 0.0f);
 
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         // Passo 2: estica a imagem para o tamanho real da janela
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, fbW, fbH);
-        glUseProgram(blitProgram);
+        glViewport(0, 0, largFb, altFb);
+        glUseProgram(progBlit);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, sceneTex);
+        glBindTexture(GL_TEXTURE_2D, texCena);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         // FPS no título da janela
-        fpsFrames++;
-        if (now - fpsTimer > 0.5) {
-            char title[64];
-            std::snprintf(title, sizeof(title), "The Anomaly - %.0f FPS", fpsFrames / (now - fpsTimer));
-            glfwSetWindowTitle(window, title);
-            fpsTimer = now;
-            fpsFrames = 0;
+        quadrosFps++;
+        if (agora - timerFps > 0.5) {
+            char titulo[64];
+            std::snprintf(titulo, sizeof(titulo), "The Anomaly - %.0f FPS", quadrosFps / (agora - timerFps));
+            glfwSetWindowTitle(janela, titulo);
+            timerFps = agora;
+            quadrosFps = 0;
         }
 
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(janela);
         glfwPollEvents();
     }
 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
-    glDeleteTextures(1, &roomTexture);
+    glDeleteTextures(1, &texSala);
     glfwTerminate();
     return 0;
 }
 
-void framebuffer_size_callback(GLFWwindow*, int width, int height)
+void callbackRedimensionar(GLFWwindow*, int width, int height)
 {
     glViewport(0, 0, width, height);
 }

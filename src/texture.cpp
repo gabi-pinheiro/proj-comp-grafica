@@ -5,7 +5,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-GLuint loadTexture(const std::string& path, float& aspect)
+GLuint carregarTextura(const std::string& path, float& aspect)
 {
     GLuint texture;
     glGenTextures(1, &texture);
