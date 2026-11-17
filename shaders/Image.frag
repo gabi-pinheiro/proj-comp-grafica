@@ -255,7 +255,9 @@ float coreVisibility(vec3 p)
     vec3 core = artifactCenter();
     vec3 dir = core - p;
     float dist = length(dir);
-    return softShadow(p, dir / dist, dist - 0.05, false);
+    // Para antes da superfície do núcleo (~0,45 do centro): se o raio entra
+    // no emissor, ele conta como oclusor e a luz nunca chega a lugar nenhum
+    return softShadow(p, dir / dist, dist - 0.55, false);
 }
 
 ////////////////////
@@ -354,7 +356,8 @@ vec3 coreHalo(vec3 ro, vec3 rd, float maxT)
 mat3 SetCamera(vec3 Look_at, vec3 CamPos)
 {
     vec3 cd = normalize(Look_at - CamPos);
-    vec3 cv = cross(vec3(0.0, 1.0, 0.0), cd);
+    // sem normalize, o raio sai sem comprimento 1 quando a câmera inclina
+    vec3 cv = normalize(cross(vec3(0.0, 1.0, 0.0), cd));
     vec3 cu = cross(cd, cv);
     return mat3(cv, cu, cd);
 }
