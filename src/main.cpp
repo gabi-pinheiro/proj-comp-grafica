@@ -190,7 +190,7 @@ int main()
     // A cena é 100% ray marching: cada pixel custa uma marcha inteira. Em GPUs
     // fracas isso fica lento, então marchamos numa textura menor e só esticamos
     // a imagem na janela (o passe final é 2D, não rasterização da cena).
-    const float RENDER_SCALE = 0.55f;
+    const float RENDER_SCALE = 0.75f;
     GLuint sceneFbo = 0, sceneTex = 0;
     glGenFramebuffers(1, &sceneFbo);
     glGenTextures(1, &sceneTex);

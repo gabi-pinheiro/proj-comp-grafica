@@ -90,9 +90,12 @@ Surface rocksSurface(vec3 p)
     // raios para o céu ou muito longe pulam o laço inteiro
     if (p.y > 14.0 || p.y < -2.0 || dot(p.xz, p.xz) > 52.0 * 52.0)
         return best;
-    for (int i = 0; i < 48; i++) {
+    // 36 rochas (10 perto + 20 espalhadas + 6 cacos): mesma distribuição
+    // da versão em malha, mas SDF simples — ruído/rotação por rocha saía
+    // caro demais (é avaliado a cada passo da marcha)
+    for (int i = 0; i < 36; i++) {
         float fi = float(i);
-        bool shard = (i >= 40);
+        bool shard = (i >= 30);
         float ang = hash11(fi * 5.31) * 6.2831;
         float rad = shard ? 18.0 + hash11(fi * 3.17) * 27.0
                 : (i < 10 ? 7.5 + hash11(fi * 1.77) * 3.5
@@ -117,12 +120,9 @@ Surface rocksSurface(vec3 p)
         vec3 center = vec3(cos(ang) * rad, 0.0, sin(ang) * rad);
         center.y = terrainHeight(center.xz) - 0.15 * radii.y;
         vec3 rp = p - center;
-        rp.xz *= rotate2D(hash11(fi * 6.17) * 6.2831);
 
-        // Elipsoide deformada por ruído e com a base achatada no solo
-        float d = ellipsoidDist(rp, radii)
-                - 0.20 * size * valueNoise3(rp * 1.8 / size + vec3(fi * 13.7));
-        d = max(d, (center.y - 0.45 * radii.y) - p.y);
+        // Elipsoide achatada no solo: forma rochosa sem ruído por passo
+        float d = max(ellipsoidDist(rp, radii), (center.y - 0.45 * radii.y) - p.y);
         if (d < best.d) {
             vec3 base = shard ? vec3(0.11, 0.09, 0.19)
                               : vec3(0.15, 0.12, 0.21) * (0.8 + 0.4 * hash11(fi * 11.3));
@@ -239,10 +239,10 @@ float softShadow(vec3 ro, vec3 rd, float maxT, bool withRocks)
 {
     float res = 1.0;
     float t = 0.04;
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 20; i++) {
         float h = withRocks ? mapDist(ro + rd * t).d : mapDistNoRocks(ro + rd * t).d;
         res = min(res, 10.0 * h / t);
-        t += clamp(h, 0.02, 0.6);
+        t += clamp(h, 0.04, 0.8);
         if (res < 0.005 || t > maxT)
             break;
     }
@@ -281,7 +281,7 @@ vec3 getLight(vec3 p, vec3 CamPos, Surface s, vec3 rd)
     // Sol direcional (Blinn-Phong) com sombra suave marchada
     float diffuse = max(dot(n, uLightDir), 0.0);
     if (diffuse > 0.0) {
-        float shadow = softShadow(p + n * 0.02, uLightDir, 40.0, true);
+        float shadow = softShadow(p + n * 0.02, uLightDir, 30.0, true);
         vec3 hv = normalize(uLightDir + v);
         float spec = pow(max(dot(n, hv), 0.0), 48.0);
         col += SUN_COLOR * shadow * (s.color * s.Kd * diffuse * 1.6 + s.Ks * spec * 0.6);
