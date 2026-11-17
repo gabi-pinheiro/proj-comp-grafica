@@ -393,8 +393,12 @@ vec3 corSala(vec2 uv01, float t)
         sala = (sala + texture(iChannel0, uv + px).rgb + texture(iChannel0, uv - px).rgb
               + texture(iChannel0, uv + vec2(px.x, -px.y)).rgb + texture(iChannel0, uv - vec2(px.x, -px.y)).rgb) / 5.0;
     }
-    // A sala emerge do branco
-    sala = mix(vec3(1.0), sala, smoothstep(0.0, 1.2, t));
+    // Depois do branco do túnel: ~1 s de preto e então a sala "acorda",
+    // emergindo do escuro; a piscada logo abaixo faz o papel de abrir os olhos
+    if (t < 1.0)
+        sala = vec3(0.0);
+    else
+        sala = mix(vec3(0.0), sala, smoothstep(1.0, 1.9, t));
 
     // Uma piscada: as pálpebras fecham e reabrem rápido uma vez
     vec2 p = uv01 * 2.0 - 1.0;
