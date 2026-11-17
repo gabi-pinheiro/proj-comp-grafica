@@ -155,6 +155,10 @@ int main()
     GLuint imageProgram = createShaderProgram("fullscreen.vert", "Image.frag");
     if (!imageProgram)
         return -1;
+    // Passe de apresentação: só estica a imagem pronta para a janela inteira
+    GLuint blitProgram = createShaderProgram("fullscreen.vert", "blit.frag");
+    if (!blitProgram)
+        return -1;
 
     ////////////////////
     //  QUAD TELA CHEIA //
@@ -183,14 +187,25 @@ int main()
     float roomAspect = 1.0f;
     GLuint roomTexture = loadTexture(std::string(ASSET_DIR) + CLASSROOM_IMAGE, roomAspect);
 
+    // A cena é 100% ray marching: cada pixel custa uma marcha inteira. Em GPUs
+    // fracas isso fica lento, então marchamos numa textura menor e só esticamos
+    // a imagem na janela (o passe final é 2D, não rasterização da cena).
+    const float RENDER_SCALE = 0.55f;
+    GLuint sceneFbo = 0, sceneTex = 0;
+    glGenFramebuffers(1, &sceneFbo);
+    glGenTextures(1, &sceneTex);
+    int renderW = 0, renderH = 0;
+
     glm::vec2 resolution(SCR_WIDTH, SCR_HEIGHT);
     glUseProgram(imageProgram);
-    setUniform(imageProgram, "iChannel0", 0);
-    setUniform(imageProgram, "iResolution", resolution);
+    setUniform(imageProgram, "iChannel0", 1);
     setUniform(imageProgram, "uRoomAspect", roomAspect);
     setUniform(imageProgram, "uLightDir", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
 
-    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(blitProgram);
+    setUniform(blitProgram, "uScene", 0);
+
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, roomTexture);
 
     glDisable(GL_CULL_FACE);   // o quad em tela cheia é desenhado dos dois lados
@@ -221,7 +236,6 @@ int main()
             glfwWaitEventsTimeout(0.1);
             continue;
         }
-        resolution = glm::vec2(float(w), float(h));
 
         if (reloadRequested) {
             reloadRequested = false;
@@ -230,7 +244,7 @@ int main()
                 glDeleteProgram(imageProgram);
                 imageProgram = reloaded;
                 glUseProgram(imageProgram);
-                setUniform(imageProgram, "iChannel0", 0);
+                setUniform(imageProgram, "iChannel0", 1);
                 setUniform(imageProgram, "uRoomAspect", roomAspect);
                 setUniform(imageProgram, "uLightDir", glm::normalize(glm::vec3(0.55f, 0.42f, -0.72f)));
                 std::cout << "Shaders recarregados" << std::endl;
@@ -271,12 +285,34 @@ int main()
             story.animationSpeed = 1.0f;
         }
 
+        // Textura interna em resolução reduzida (recriada se a janela mudar)
+        int fbW, fbH;
+        glfwGetFramebufferSize(window, &fbW, &fbH);
+        int rw = std::max(1, int(fbW * RENDER_SCALE));
+        int rh = std::max(1, int(fbH * RENDER_SCALE));
+        if (rw != renderW || rh != renderH) {
+            renderW = rw;
+            renderH = rh;
+            resolution = glm::vec2(float(renderW), float(renderH));
+            glBindTexture(GL_TEXTURE_2D, sceneTex);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, renderW, renderH, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTex, 0);
+        }
+
+        // Passo 1: marcha a cena inteira na textura menor
+        glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
+        glViewport(0, 0, renderW, renderH);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(imageProgram);
         glBindVertexArray(VAO);
-        glActiveTexture(GL_TEXTURE0);
+        glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, roomTexture);
 
         setUniform(imageProgram, "iResolution", resolution);
@@ -290,6 +326,14 @@ int main()
         setUniform(imageProgram, "uBlack", story.black);
         setUniform(imageProgram, "uParticles", (storyPlaying ? story.particles : particlesEnabled) ? 1.0f : 0.0f);
 
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // Passo 2: estica a imagem para o tamanho real da janela
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, fbW, fbH);
+        glUseProgram(blitProgram);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, sceneTex);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         // FPS no título da janela
